@@ -1,0 +1,15 @@
+*.o
+*.lo
+*.exe
+*.log
+MHD_config.h
+Makefile
+*.err
+*.rc
+*.pc
+*.status
+.deps
+.libs
+*.la
+libtool
+stamp-h1

@@ -23,6 +23,9 @@
  * @brief  A minimal-HTTP server library
  * @author Daniel Pittman
  * @author Christian Grothoff
+ * @author Richard Whitehouse
+ *   Added ability to disable use of the SO_REUSEADDR socket option using a
+ *   build flag - USE_REUSEADDR
  */
 #include "platform.h"
 #include "internal.h"
@@ -3470,6 +3473,14 @@ MHD_start_daemon_va (unsigned int flags,
 #endif
 	  goto free_and_fail;
 	}
+
+/*
+Added 21st March 2014 by Richard Whitehouse
+
+Add a build flag to conditionally disable use of the SO_REUSEADDR option in
+order to correctly fail to bind to existing ports on win32
+*/
+#ifdef USE_REUSEADDR
       if ( (0 > setsockopt (socket_fd,
 			    SOL_SOCKET,
 			    SO_REUSEADDR,
@@ -3482,6 +3493,14 @@ MHD_start_daemon_va (unsigned int flags,
 		    MHD_socket_last_strerr_ ());
 #endif
 	}
+
+/*
+Added 21st March 2014 by Richard Whitehouse
+
+Add a build flag to conditionally disable use of the SO_REUSEADDR option in
+order to correctly fail to bind to existing ports on win32
+*/
+#endif
 
       /* check for user supplied sockaddr */
 #if HAVE_INET6

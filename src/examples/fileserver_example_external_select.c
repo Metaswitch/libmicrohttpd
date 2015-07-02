@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007, 2008 Christian Grothoff (and other contributing authors)
+     Copyright (C) 2007, 2008 Christian Grothoff (and other contributing authors)
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -109,7 +109,7 @@ main (int argc, char *const *argv)
   fd_set rs;
   fd_set ws;
   fd_set es;
-  int max;
+  MHD_socket max;
   MHD_UNSIGNED_LONG_LONG mhd_timeout;
 
   if (argc != 3)

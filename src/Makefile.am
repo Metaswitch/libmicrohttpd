@@ -1,3 +1,4 @@
+# This Makefile.am is in the public domain
 if HAVE_CURL
 curltests = testcurl
 if HAVE_ZZUF
@@ -18,7 +19,11 @@ microspdy += testspdy
 endif
 endif
 
-SUBDIRS = include platform microhttpd $(microspdy) examples $(curltests) $(zzuftests) .
+SUBDIRS = include platform microhttpd $(microspdy) $(curltests) $(zzuftests) .
+
+if BUILD_EXAMPLES
+SUBDIRS += examples
+endif
 
 EXTRA_DIST = \
  datadir/cert-and-key.pem \

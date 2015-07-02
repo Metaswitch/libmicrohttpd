@@ -1,3 +1,4 @@
+# This Makefile.am is in the public domain
 SUBDIRS  = .
 
 AM_CFLAGS = -DDATA_DIR=\"$(top_srcdir)/src/datadir/\"
@@ -10,7 +11,7 @@ AM_CPPFLAGS = \
  -I$(top_srcdir) \
  -I$(top_srcdir)/src/include \
  -I$(top_srcdir)/src/applicationlayer \
-$(LIBCURL_CPPFLAGS) 
+ $(LIBCURL_CPPFLAGS)
 
 if !HAVE_W32
 PERF_GET_CONCURRENT=perf_get_concurrent
@@ -49,10 +50,7 @@ SPDY_SOURCES= \
 
 SPDY_LDADD=  \
  $(top_builddir)/src/microspdy/libmicrospdy.la \
- -lssl \
- -lcrypto \
- -lz \
- -ldl
+ -lz
 
 test_daemon_start_stop_SOURCES = \
  test_daemon_start_stop.c \

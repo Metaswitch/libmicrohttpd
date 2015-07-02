@@ -146,7 +146,7 @@ AC_DEFUN([LIBCURL_CHECK_CONFIG],
            _libcurl_save_libs=$LIBS
            LIBS="$LIBCURL $LIBS"
 
-           AC_LINK_IFELSE([AC_LANG_PROGRAM([#include <curl/curl.h>],[
+           AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <curl/curl.h>]],[[
 /* Try and use a few common options to force a failure if we are
    missing symbols or can't link. */
 int x;
@@ -157,7 +157,8 @@ x=CURLOPT_FILE;
 x=CURLOPT_ERRORBUFFER;
 x=CURLOPT_STDERR;
 x=CURLOPT_VERBOSE;
-])],libcurl_cv_lib_curl_usable=yes,libcurl_cv_lib_curl_usable=no)
+if (x) ;
+]])],libcurl_cv_lib_curl_usable=yes,libcurl_cv_lib_curl_usable=no)
 
            CPPFLAGS=$_libcurl_save_cppflags
            LIBS=$_libcurl_save_libs
@@ -199,6 +200,8 @@ x=CURLOPT_VERBOSE;
               # We don't have --protocols, so just assume that all
               # protocols are available
               _libcurl_protocols="HTTP FTP FILE TELNET LDAP DICT TFTP"
+
+              test -z "$_libcurl_version" && _libcurl_version=0
 
               if test x$libcurl_feature_SSL = xyes ; then
                  _libcurl_protocols="$_libcurl_protocols HTTPS"

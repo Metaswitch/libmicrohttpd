@@ -1,6 +1,6 @@
 /*
     This file is part of libmicrospdy
-    Copyright (C) 2013 Andrey Uzunov
+    Copyright Copyright (C) 2013 Andrey Uzunov
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -80,7 +80,7 @@ pid_t au_fork()
 	if (child == -1)
 	{
     killchildren();
-      
+
 		killproc(parent,"fork failed\n");
 	}
 
@@ -93,7 +93,7 @@ int main()
   //pid_t child;
 	int childstatus;
 	pid_t wpid;
-  
+
 	parent = getpid();
 	mhd_port = get_port(4000);
 	spdy2http_port = get_port(4100);
@@ -108,6 +108,8 @@ int main()
 
 		close(1);
 		devnull = open("/dev/null", O_WRONLY);
+                if (-1 == devnull)
+                  abort();
 		if (1 != devnull)
 		{
 			dup2(devnull, 1);
@@ -119,8 +121,8 @@ int main()
     //killchildren();
     _exit(1);
 	}
-  
-  
+
+
 	child_spdy2http = au_fork();
 	if (child_spdy2http == 0)
 	{
@@ -131,6 +133,8 @@ int main()
 
 		close(1);
 		devnull = open("/dev/null", O_WRONLY);
+                if (-1 == devnull)
+                  abort();
 		if (1 != devnull)
 		{
 			dup2(devnull, 1);
@@ -144,7 +148,7 @@ int main()
     //killchildren();
     _exit(1);
 	}
-  
+
 	child_mhd2spdy = au_fork();
 	if (child_mhd2spdy == 0)
 	{
@@ -155,6 +159,8 @@ int main()
 
 		close(1);
 		devnull = open("/dev/null", O_WRONLY);
+                if (-1 == devnull)
+                  abort();
 		if (1 != devnull)
 		{
 			dup2(devnull, 1);
@@ -168,7 +174,7 @@ int main()
     //killchildren();
     _exit(1);
 	}
-  
+
 	child_curl = au_fork();
 	if (child_curl == 0)
 	{
@@ -177,16 +183,19 @@ int main()
 		pid_t devnull;
 		char *cmd;
     unsigned int i;
+    int retc;
     char buf[strlen(EXPECTED_BODY) + 1];
 
 		close(1);
 		devnull = open("/dev/null", O_WRONLY);
+                if (-1 == devnull)
+                  abort ();
 		if (1 != devnull)
 		{
 			dup2(devnull, 1);
 			close(devnull);
 		}
-    
+
 		asprintf (&cmd, "curl --proxy http://127.0.0.1:%i http://127.0.0.1:%i/", mhd2spdy_port, mhd_port);
     sleep(3);
     p = popen(cmd, "r");
@@ -194,7 +203,10 @@ int main()
     {
       for (i = 0; i < strlen(EXPECTED_BODY) && !feof(p); i++)
       {
-          buf[i] = fgetc(p);
+          retc = fgetc (p);
+          if (EOF == retc)
+            abort (); /* what did feof(p) do there!? */
+          buf[i] = (char) retc;
       }
 
       pclose(p);
@@ -205,7 +217,7 @@ int main()
     //killchildren();
     _exit(1);
 	}
-  
+
   do
   {
     wpid = waitpid(child_mhd,&childstatus,WNOHANG);
@@ -215,7 +227,7 @@ int main()
       killchildren();
       return 1;
     }
-    
+
     wpid = waitpid(child_spdy2http,&childstatus,WNOHANG);
     if(wpid == child_spdy2http)
     {
@@ -223,7 +235,7 @@ int main()
       killchildren();
       return 1;
     }
-    
+
     wpid = waitpid(child_mhd2spdy,&childstatus,WNOHANG);
     if(wpid == child_mhd2spdy)
     {
@@ -231,7 +243,7 @@ int main()
       killchildren();
       return 1;
     }
-    
+
     if(waitpid(child_curl,&childstatus,WNOHANG) == child_curl)
     {
       killchildren();

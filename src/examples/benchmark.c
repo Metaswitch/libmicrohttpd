@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007, 2013 Christian Grothoff (and other contributing authors)
+     Copyright (C) 2007, 2013 Christian Grothoff (and other contributing authors)
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,13 @@
 #include "platform.h"
 #include <microhttpd.h>
 
+#if defined(CPU_COUNT) && (CPU_COUNT+0) < 2
+#undef CPU_COUNT
+#endif
+#if !defined(CPU_COUNT)
+#define CPU_COUNT 2
+#endif
+
 #define PAGE "<html><head><title>libmicrohttpd demo</title></head><body>libmicrohttpd demo</body></html>"
 
 
@@ -34,7 +41,7 @@
  * Number of threads to run in the thread pool.  Should (roughly) match
  * the number of cores on your system.
  */
-#define NUMBER_OF_THREADS 4
+#define NUMBER_OF_THREADS CPU_COUNT
 
 static unsigned int small_deltas[SMALL];
 

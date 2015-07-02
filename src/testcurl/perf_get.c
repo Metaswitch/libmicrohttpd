@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007, 2009, 2011 Christian Grothoff
+     Copyright (C) 2007, 2009, 2011 Christian Grothoff
 
      libmicrohttpd is free software; you can redistribute it and/or modify
      it under the terms of the GNU General Public License as published
@@ -48,6 +48,13 @@
 #ifndef WINDOWS
 #include <unistd.h>
 #include <sys/socket.h>
+#endif
+
+#if defined(CPU_COUNT) && (CPU_COUNT+0) < 2
+#undef CPU_COUNT
+#endif
+#if !defined(CPU_COUNT)
+#define CPU_COUNT 2
 #endif
 
 /**
@@ -306,7 +313,7 @@ testMultithreadedPoolGet (int port, int poll_flag)
   cbc.size = 2048;
   d = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY | MHD_USE_DEBUG | poll_flag,
                         port, NULL, NULL, &ahc_echo, "GET",
-                        MHD_OPTION_THREAD_POOL_SIZE, 4, MHD_OPTION_END);
+                        MHD_OPTION_THREAD_POOL_SIZE, CPU_COUNT, MHD_OPTION_END);
   if (d == NULL)
     return 16;
   start_timer ();
@@ -495,7 +502,8 @@ main (int argc, char *const *argv)
   unsigned int errorCount = 0;
   int port = 1081;
 
-  oneone = NULL != strstr (argv[0], "11");
+  oneone = (NULL != strrchr (argv[0], (int) '/')) ?
+    (NULL != strstr (strrchr (argv[0], (int) '/'), "11")) : 0;
   if (0 != curl_global_init (CURL_GLOBAL_WIN32))
     return 2;
   response = MHD_create_response_from_buffer (strlen ("/hello_world"),
@@ -505,15 +513,17 @@ main (int argc, char *const *argv)
   errorCount += testInternalGet (port++, 0);
   errorCount += testMultithreadedGet (port++, 0);
   errorCount += testMultithreadedPoolGet (port++, 0);
-#ifndef WINDOWS
-  errorCount += testInternalGet (port++, MHD_USE_POLL);
-  errorCount += testMultithreadedGet (port++, MHD_USE_POLL);
-  errorCount += testMultithreadedPoolGet (port++, MHD_USE_POLL);
-#endif
-#if EPOLL_SUPPORT
-  errorCount += testInternalGet (port++, MHD_USE_EPOLL_LINUX_ONLY);
-  errorCount += testMultithreadedPoolGet (port++, MHD_USE_EPOLL_LINUX_ONLY);
-#endif
+  if (MHD_YES == MHD_is_feature_supported(MHD_FEATURE_POLL))
+    {
+      errorCount += testInternalGet(port++, MHD_USE_POLL);
+      errorCount += testMultithreadedGet(port++, MHD_USE_POLL);
+      errorCount += testMultithreadedPoolGet(port++, MHD_USE_POLL);
+    }
+  if (MHD_YES == MHD_is_feature_supported(MHD_FEATURE_EPOLL))
+    {
+      errorCount += testInternalGet(port++, MHD_USE_EPOLL_LINUX_ONLY);
+      errorCount += testMultithreadedPoolGet(port++, MHD_USE_EPOLL_LINUX_ONLY);
+    }
   MHD_destroy_response (response);
   if (errorCount != 0)
     fprintf (stderr, "Error (code: %u)\n", errorCount);

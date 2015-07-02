@@ -1,6 +1,6 @@
 /*
   This file is part of libmicrohttpd
-  (C) 2014 Karlson2k (Evgeny Grin)
+  Copyright (C) 2014 Karlson2k (Evgeny Grin)
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -13,12 +13,12 @@
   Lesser General Public License for more details.
 
   You should have received a copy of the GNU Lesser General Public
-  License along with this library. 
+  License along with this library.
   If not, see <http://www.gnu.org/licenses/>.
 */
 
 /**
- * @file platform/w32functions.h
+ * @file include/w32functions.h
  * @brief  internal functions for W32 systems
  * @author Karlson2k (Evgeny Grin)
  */
@@ -29,9 +29,9 @@
 #error w32functions.h is designed only for W32 systems
 #endif
 
+#include "platform.h"
 #include <errno.h>
 #include <winsock2.h>
-#include "platform.h"
 #include "platform_interface.h"
 
 #ifdef __cplusplus
@@ -146,12 +146,16 @@ extern "C"
 #ifndef ENODATA
 #define ENODATA (MHDW32ERRBASE+35)
 #endif
+#ifndef ETIMEDOUT
+#define ETIMEDOUT (MHDW32ERRBASE+36)
+#endif
 
 /**
  * Return errno equivalent of last winsock error
  * @return errno equivalent of last winsock error
  */
 int MHD_W32_errno_from_winsock_(void);
+
 /**
  * Return pointer to string description of errnum error
  * Works fine with both standard errno errnums
@@ -160,11 +164,13 @@ int MHD_W32_errno_from_winsock_(void);
  * @return pointer to string description of error
  */
 const char* MHD_W32_strerror_(int errnum);
+
 /**
  * Return pointer to string description of last winsock error
  * @return pointer to string description of last winsock error
  */
 const char* MHD_W32_strerror_last_winsock_(void);
+
 /**
  * Set last winsock error to equivalent of given errno value
  * @param errnum the errno value to set
@@ -177,12 +183,29 @@ void MHD_W32_set_last_winsock_error_(int errnum);
  * @return zero on success, -1 otherwise
  */
 int MHD_W32_pair_of_sockets_(SOCKET sockets_pair[2]);
+
 /**
  * Generate 31-bit pseudo random number.
  * Function initialize itself at first call to current time.
  * @return 31-bit pseudo random number.
  */
 int MHD_W32_random_(void);
+
+/* Emulate snprintf function on W32 */
+int W32_snprintf(char *__restrict s, size_t n, const char *__restrict format, ...);
+
+#ifndef _MSC_FULL_VER
+/* Thread name available only for VC-compiler */
+static void W32_SetThreadName(const DWORD thread_id, const char *thread_name)
+{ }
+#else  /* _MSC_FULL_VER */
+/**
+ * Set thread name
+ * @param thread_id ID of thread, -1 for current thread
+ * @param thread_name name to set
+ */
+void W32_SetThreadName(const DWORD thread_id, const char *thread_name);
+#endif
 
 #ifdef __cplusplus
 }

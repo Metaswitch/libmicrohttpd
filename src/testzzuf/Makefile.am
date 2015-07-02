@@ -1,3 +1,4 @@
+# This Makefile.am is in the public domain
 SUBDIRS  = .
 
 if USE_COVERAGE
@@ -5,7 +6,8 @@ if USE_COVERAGE
 endif
 
 
-AM_CPPFLAGS = -I$(top_srcdir)/src/include
+AM_CPPFLAGS = -I$(top_srcdir)/src/include \
+  $(LIBCURL_CPPFLAGS)
 
 EXTRA_DIST = README socat.c
 

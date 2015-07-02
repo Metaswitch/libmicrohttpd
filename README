@@ -1,3 +1,27 @@
+libmicrohttpd - see http://www.gnu.org/software/libmicrohttpd/
+
++------------------+
+| METASWITCH NOTES |
++------------------+
+
+This repo contains the libmicrohttpd source, plus some local changes, build scripts etc.
+
+We have 2 branches:
+- master (containing Metaswitch-changes)
+- upstream (mirror of libmicrohttpd source)
+
+To update to a new version of libmicrohttpd:
+- git checkout upstream
+- obtain the latest libmicrohttpd-<version>.tar.gz (don't copy the SVN repo - that's missing install scripts etc)
+- replace contents of repo with contents of the tar
+- git checkout master
+- git merge upstream
+
+
++---------------------+
+| LIBMICROHTTPD NOTES |
++---------------------+
+
 About
 =====
 

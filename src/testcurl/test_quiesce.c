@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2013 Christian Grothoff
+     Copyright (C) 2013, 2015 Christian Grothoff
 
      libmicrohttpd is free software; you can redistribute it and/or modify
      it under the terms of the GNU General Public License as published
@@ -17,9 +17,8 @@
      Free Software Foundation, Inc., 59 Temple Place - Suite 330,
      Boston, MA 02111-1307, USA.
 */
-
 /**
- * @file daemontest_quiesce.c
+ * @file test_quiesce.c
  * @brief  Testcase for libmicrohttpd quiescing
  * @author Christian Grothoff
  */
@@ -33,13 +32,19 @@
 #include <string.h>
 #include <time.h>
 #include <sys/types.h>
+#include <pthread.h>
 
 #ifndef WINDOWS
 #include <unistd.h>
 #include <sys/socket.h>
 #endif
 
-static int oneone;
+#if defined(CPU_COUNT) && (CPU_COUNT+0) < 2
+#undef CPU_COUNT
+#endif
+#if !defined(CPU_COUNT)
+#define CPU_COUNT 2
+#endif
 
 
 struct CBC
@@ -163,10 +168,7 @@ setupCURL (void *cbc)
   curl_easy_setopt (c, CURLOPT_FAILONERROR, 1);
   curl_easy_setopt (c, CURLOPT_TIMEOUT_MS, 150L);
   curl_easy_setopt (c, CURLOPT_CONNECTTIMEOUT_MS, 150L);
-  if (oneone)
-    curl_easy_setopt (c, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
-  else
-    curl_easy_setopt (c, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
+  curl_easy_setopt (c, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_0);
   /* NOTE: use of CONNECTTIMEOUT without also
      setting NOSIGNAL results in really weird
      crashes on my system!*/
@@ -431,22 +433,23 @@ main (int argc, char *const *argv)
 {
   unsigned int errorCount = 0;
 
-  oneone = NULL != strstr (argv[0], "11");
   if (0 != curl_global_init (CURL_GLOBAL_WIN32))
     return 2;
   errorCount += testGet (MHD_USE_SELECT_INTERNALLY, 0, 0);
   errorCount += testGet (MHD_USE_THREAD_PER_CONNECTION, 0, 0);
-  errorCount += testGet (MHD_USE_SELECT_INTERNALLY, 4, 0);
+  errorCount += testGet (MHD_USE_SELECT_INTERNALLY, CPU_COUNT, 0);
   errorCount += testExternalGet ();
-#ifndef WINDOWS
-  errorCount += testGet (MHD_USE_SELECT_INTERNALLY, 0, MHD_USE_POLL);
-  errorCount += testGet (MHD_USE_THREAD_PER_CONNECTION, 0, MHD_USE_POLL);
-  errorCount += testGet (MHD_USE_SELECT_INTERNALLY, 4, MHD_USE_POLL);
-#endif
-#if EPOLL_SUPPORT
-  errorCount += testGet (MHD_USE_SELECT_INTERNALLY, 0, MHD_USE_EPOLL_LINUX_ONLY);
-  errorCount += testGet (MHD_USE_SELECT_INTERNALLY, 4, MHD_USE_EPOLL_LINUX_ONLY);
-#endif
+  if (MHD_YES == MHD_is_feature_supported(MHD_FEATURE_POLL))
+    {
+      errorCount += testGet(MHD_USE_SELECT_INTERNALLY, 0, MHD_USE_POLL);
+      errorCount += testGet (MHD_USE_THREAD_PER_CONNECTION, 0, MHD_USE_POLL);
+      errorCount += testGet (MHD_USE_SELECT_INTERNALLY, CPU_COUNT, MHD_USE_POLL);
+    }
+  if (MHD_YES == MHD_is_feature_supported(MHD_FEATURE_EPOLL))
+    {
+      errorCount += testGet (MHD_USE_SELECT_INTERNALLY, 0, MHD_USE_EPOLL_LINUX_ONLY);
+      errorCount += testGet (MHD_USE_SELECT_INTERNALLY, CPU_COUNT, MHD_USE_EPOLL_LINUX_ONLY);
+    }
   if (errorCount != 0)
     fprintf (stderr, "Error (code: %u)\n", errorCount);
   curl_global_cleanup ();

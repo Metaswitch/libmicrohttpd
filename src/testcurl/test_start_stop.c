@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2011 Christian Grothoff
+     Copyright (C) 2011 Christian Grothoff
 
      libmicrohttpd is free software; you can redistribute it and/or modify
      it under the terms of the GNU General Public License as published
@@ -27,6 +27,13 @@
 #include "platform.h"
 #include <curl/curl.h>
 #include <microhttpd.h>
+
+#if defined(CPU_COUNT) && (CPU_COUNT+0) < 2
+#undef CPU_COUNT
+#endif
+#if !defined(CPU_COUNT)
+#define CPU_COUNT 2
+#endif
 
 
 static int
@@ -75,7 +82,7 @@ testMultithreadedPoolGet (int poll_flag)
 
   d = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY | MHD_USE_DEBUG | poll_flag,
                         1081, NULL, NULL, &ahc_echo, "GET",
-                        MHD_OPTION_THREAD_POOL_SIZE, 4, MHD_OPTION_END);
+                        MHD_OPTION_THREAD_POOL_SIZE, CPU_COUNT, MHD_OPTION_END);
   if (d == NULL)
     return 4;
   MHD_stop_daemon (d);
@@ -105,15 +112,17 @@ main (int argc, char *const *argv)
   errorCount += testMultithreadedGet (0);
   errorCount += testMultithreadedPoolGet (0);
   errorCount += testExternalGet ();
-#ifndef WINDOWS
-  errorCount += testInternalGet (MHD_USE_POLL);
-  errorCount += testMultithreadedGet (MHD_USE_POLL);
-  errorCount += testMultithreadedPoolGet (MHD_USE_POLL);
-#endif
-#if EPOLL_SUPPORT
-  errorCount += testInternalGet (MHD_USE_EPOLL_LINUX_ONLY);
-  errorCount += testMultithreadedPoolGet (MHD_USE_EPOLL_LINUX_ONLY);
-#endif
+  if (MHD_YES == MHD_is_feature_supported(MHD_FEATURE_POLL))
+    {
+      errorCount += testInternalGet(MHD_USE_POLL);
+      errorCount += testMultithreadedGet(MHD_USE_POLL);
+      errorCount += testMultithreadedPoolGet(MHD_USE_POLL);
+    }
+  if (MHD_YES == MHD_is_feature_supported(MHD_FEATURE_EPOLL))
+    {
+      errorCount += testInternalGet(MHD_USE_EPOLL_LINUX_ONLY);
+      errorCount += testMultithreadedPoolGet(MHD_USE_EPOLL_LINUX_ONLY);
+    }
   if (errorCount != 0)
     fprintf (stderr, "Error (code: %u)\n", errorCount);
   return errorCount != 0;       /* 0 == pass */

@@ -1,6 +1,6 @@
 /*
     This file is part of libmicrospdy
-    Copyright (C) 2012, 2013 Christian Grothoff
+    Copyright Copyright (C) 2012, 2013 Christian Grothoff
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -852,7 +852,7 @@ SPDY_deinit (void);
  */
 _MHD_EXTERN void
 SPDY_set_panic_func (SPDY_PanicCallback cb,
-					void *cls);
+                     void *cls);
 
 
 /* Daemon functions */

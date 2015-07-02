@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2010, 2011, 2012 Daniel Pittman and Christian Grothoff
+     Copyright (C) 2010, 2011, 2012 Daniel Pittman and Christian Grothoff
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,13 @@
 #include <limits.h>
 #include "internal.h"
 #include "md5.h"
+
+#if defined(_WIN32) && defined(MHD_W32_MUTEX_)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif /* !WIN32_LEAN_AND_MEAN */
+#include <windows.h>
+#endif /* _WIN32 && MHD_W32_MUTEX_ */
 
 #define HASH_MD5_HEX_LEN (2 * MD5_DIGEST_SIZE)
 
@@ -107,7 +114,7 @@ digest_calc_ha1 (const char *alg,
   MD5Update (&md5, ":", 1);
   MD5Update (&md5, password, strlen (password));
   MD5Final (ha1, &md5);
-  if (0 == strcasecmp (alg, "md5-sess"))
+  if (MHD_str_equal_caseless_(alg, "md5-sess"))
     {
       MD5Init (&md5);
       MD5Update (&md5, ha1, sizeof (ha1));
@@ -239,7 +246,7 @@ lookup_sub_value (char *dest,
 	    return 0; /* end quote not found */
 	  qn = q2 + 1;
 	}
-      if ( (0 == strncasecmp (ptr,
+      if ((MHD_str_equal_caseless_n_(ptr,
 			      key,
 			      keylen)) &&
 	   (eq == &ptr[keylen]) )
@@ -317,19 +324,19 @@ check_nonce_nc (struct MHD_Connection *connection,
    * then only increase the nonce counter by one.
    */
 
-  (void) pthread_mutex_lock (&connection->daemon->nnc_lock);
+  (void) MHD_mutex_lock_ (&connection->daemon->nnc_lock);
   if (0 == nc)
     {
       strcpy(connection->daemon->nnc[off].nonce,
 	     nonce);
       connection->daemon->nnc[off].nc = 0;
-      (void) pthread_mutex_unlock (&connection->daemon->nnc_lock);
+      (void) MHD_mutex_unlock_ (&connection->daemon->nnc_lock);
       return MHD_YES;
     }
   if ( (nc <= connection->daemon->nnc[off].nc) ||
        (0 != strcmp(connection->daemon->nnc[off].nonce, nonce)) )
     {
-      (void) pthread_mutex_unlock (&connection->daemon->nnc_lock);
+      (void) MHD_mutex_unlock_ (&connection->daemon->nnc_lock);
 #if HAVE_MESSAGES
       MHD_DLOG (connection->daemon,
 		"Stale nonce received.  If this happens a lot, you should probably increase the size of the nonce array.\n");
@@ -337,7 +344,7 @@ check_nonce_nc (struct MHD_Connection *connection,
       return MHD_NO;
     }
   connection->daemon->nnc[off].nc = nc;
-  (void) pthread_mutex_unlock (&connection->daemon->nnc_lock);
+  (void) MHD_mutex_unlock_ (&connection->daemon->nnc_lock);
   return MHD_YES;
 }
 
@@ -473,15 +480,22 @@ check_argument_match (struct MHD_Connection *connection,
 		      const char *args)
 {
   struct MHD_HTTP_Header *pos;
-  size_t slen = strlen (args) + 1;
-  char argb[slen];
+  char *argb;
   char *argp;
   char *equals;
   char *amper;
   unsigned int num_headers;
 
+  argb = strdup(args);
+  if (NULL == argb)
+  {
+#if HAVE_MESSAGES
+    MHD_DLOG(connection->daemon,
+             "Failed to allocate memory for copy of URI arguments\n");
+#endif /* HAVE_MESSAGES */
+    return MHD_NO;
+  }
   num_headers = 0;
-  memcpy (argb, args, slen);
   argp = argb;
   while ( (NULL != argp) &&
 	  ('\0' != argp[0]) )
@@ -619,12 +633,24 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
     return MHD_NO;
   }
   {
-    char uri[left];
-
-    if (0 == lookup_sub_value (uri,
-                               sizeof (uri),
-                               header, "uri"))
+    char *uri;
+    
+    uri = malloc(left + 1);
+    if (NULL == uri)
+    {
+#if HAVE_MESSAGES
+      MHD_DLOG(connection->daemon,
+               "Failed to allocate memory for auth header processing\n");
+#endif /* HAVE_MESSAGES */
       return MHD_NO;
+    }
+    if (0 == lookup_sub_value (uri,
+                               left + 1,
+                               header, "uri"))
+    {
+      free(uri);
+      return MHD_NO;
+    }
 
     /* 8 = 4 hexadecimal numbers for the timestamp */
     nonce_time = strtoul (nonce + len - 8, (char **)NULL, 16);
@@ -636,7 +662,10 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
      */
     if ( (t > nonce_time + nonce_timeout) ||
 	 (nonce_time + nonce_timeout < nonce_time) )
+    { 
+      free(uri);
       return MHD_INVALID_NONCE;
+    }
     if (0 != strncmp (uri,
 		      connection->url,
 		      strlen (connection->url)))
@@ -645,6 +674,7 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
       MHD_DLOG (connection->daemon,
 		"Authentication failed, URI does not match.\n");
 #endif
+      free(uri);
       return MHD_NO;
     }
     {
@@ -662,7 +692,8 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
 	MHD_DLOG (connection->daemon,
 		  "Authentication failed, arguments do not match.\n");
 #endif
-	return MHD_NO;
+       free(uri);
+       return MHD_NO;
       }
     }
     calculate_nonce (nonce_time,
@@ -683,7 +714,10 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
      */
 
     if (0 != strcmp (nonce, noncehashexp))
+    {
+      free(uri);
       return MHD_INVALID_NONCE;
+    }
     if ( (0 == lookup_sub_value (cnonce,
 				 sizeof (cnonce),
 				 header, "cnonce")) ||
@@ -697,6 +731,7 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
       MHD_DLOG (connection->daemon,
 		"Authentication failed, invalid format.\n");
 #endif
+      free(uri);
       return MHD_NO;
     }
     nci = strtoul (nc, &end, 16);
@@ -708,6 +743,7 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
       MHD_DLOG (connection->daemon,
 		"Authentication failed, invalid format.\n");
 #endif
+      free(uri);
       return MHD_NO; /* invalid nonce format */
     }
     /*
@@ -717,7 +753,10 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
      */
 
     if (MHD_YES != check_nonce_nc (connection, nonce, nci))
+    {
+      free(uri);
       return MHD_NO;
+    }
 
     digest_calc_ha1("md5",
 		    username,
@@ -735,6 +774,7 @@ MHD_digest_auth_check (struct MHD_Connection *connection,
 			  uri,
 			  hentity,
 			  respexp);
+    free(uri);
     return (0 == strcmp(response, respexp))
       ? MHD_YES
       : MHD_NO;
@@ -784,7 +824,7 @@ MHD_queue_auth_fail_response (struct MHD_Connection *connection,
       return MHD_NO;
     }
   /* Building the authentication header */
-  hlen = snprintf (NULL,
+  hlen = MHD_snprintf_(NULL,
 		   0,
 		   "Digest realm=\"%s\",qop=\"auth\",nonce=\"%s\",opaque=\"%s\"%s",
 		   realm,
@@ -794,10 +834,20 @@ MHD_queue_auth_fail_response (struct MHD_Connection *connection,
 		   ? ",stale=\"true\""
 		   : "");
   {
-    char header[hlen + 1];
+    char *header;
+    
+    header = malloc(hlen + 1);
+    if (NULL == header)
+    {
+#if HAVE_MESSAGES
+      MHD_DLOG(connection->daemon,
+               "Failed to allocate memory for auth response header\n");
+#endif /* HAVE_MESSAGES */
+      return MHD_NO;
+    }
 
-    snprintf (header,
-	      sizeof(header),
+    MHD_snprintf_(header,
+	      hlen + 1,
 	      "Digest realm=\"%s\",qop=\"auth\",nonce=\"%s\",opaque=\"%s\"%s",
 	      realm,
 	      nonce,
@@ -808,6 +858,7 @@ MHD_queue_auth_fail_response (struct MHD_Connection *connection,
     ret = MHD_add_response_header(response,
 				  MHD_HTTP_HEADER_WWW_AUTHENTICATE,
 				  header);
+    free(header);
   }
   if (MHD_YES == ret)
     ret = MHD_queue_response(connection,

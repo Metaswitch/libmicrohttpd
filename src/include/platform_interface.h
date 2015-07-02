@@ -1,6 +1,6 @@
 /*
   This file is part of libmicrohttpd
-  (C) 2014 Karlson2k (Evgeny Grin)
+  Copyright (C) 2014 Karlson2k (Evgeny Grin)
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -13,12 +13,12 @@
   Lesser General Public License for more details.
 
   You should have received a copy of the GNU Lesser General Public
-  License along with this library. 
+  License along with this library.
   If not, see <http://www.gnu.org/licenses/>.
 */
 
 /**
- * @file platform/platfrom_interface.h
+ * @file include/platform_interface.h
  * @brief  internal platform abstraction functions
  * @author Karlson2k (Evgeny Grin)
  */
@@ -30,6 +30,56 @@
 #if defined(_WIN32) && !defined(__CYGWIN__)
 #include "w32functions.h"
 #endif
+
+/* ***************************** 
+     General function mapping 
+   *****************************/
+#if !defined(_WIN32) || defined(__CYGWIN__)
+/**
+ * Check two strings case-insensitive equality
+ * @param a first string to check
+ * @param b second string to check
+ * @return boolean true if strings are equal, boolean false if strings are unequal
+ */
+#define MHD_str_equal_caseless_(a,b) (0==strcasecmp((a),(b)))
+#else
+/**
+ * Check two strings case-insensitive equality
+ * @param a first string to check
+ * @param b second string to check
+ * @return boolean true if strings are equal, boolean false if strings are unequal
+ */
+#define MHD_str_equal_caseless_(a,b) (0==_stricmp((a),(b)))
+#endif
+
+#if !defined(_WIN32) || defined(__CYGWIN__)
+/**
+ * Check not more than n chars in two strings case-insensitive equality
+ * @param a first string to check
+ * @param b second string to check
+ * @param n maximum number of chars to check
+ * @return boolean true if strings are equal, boolean false if strings are unequal
+ */
+#define MHD_str_equal_caseless_n_(a,b,n) (0==strncasecmp((a),(b),(n)))
+#else
+/**
+ * Check not more than n chars in two strings case-insensitive equality
+ * @param a first string to check
+ * @param b second string to check
+ * @param n maximum number of chars to check
+ * @return boolean true if strings are equal, boolean false if strings are unequal
+ */
+#define MHD_str_equal_caseless_n_(a,b,n) (0==_strnicmp((a),(b),(n)))
+#endif
+
+/* Platform-independent snprintf name */
+#if !defined(_WIN32) || defined(__CYGWIN__)
+#define MHD_snprintf_ snprintf
+#else
+#define MHD_snprintf_ W32_snprintf
+#endif
+
+
 
 /* MHD_socket_close_(fd) close any FDs (non-W32) / close only socket FDs (W32) */
 #if !defined(_WIN32) || defined(__CYGWIN__)
@@ -73,6 +123,15 @@
 #else
 #define MHD_SYS_select_(n,r,w,e,t) select((int)0,(r),(w),(e),(t))
 #endif
+
+#if defined(HAVE_POLL)
+/* MHD_sys_poll_ is wrapper macro for system poll() function */
+#if !defined(MHD_WINSOCK_SOCKETS)
+#define MHD_sys_poll_ poll
+#else  /* MHD_WINSOCK_SOCKETS */
+#define MHD_sys_poll_ WSAPoll
+#endif /* MHD_WINSOCK_SOCKETS */
+#endif /* HAVE_POLL */
 
 /* MHD_pipe_ create pipe (!MHD_DONT_USE_PIPES) /
  *           create two connected sockets (MHD_DONT_USE_PIPES) */
@@ -137,6 +196,149 @@
 #define MHD_random_() random()
 #else
 #define MHD_random_() MHD_W32_random_()
+#endif
+
+#if defined(MHD_USE_POSIX_THREADS)
+typedef pthread_t MHD_thread_handle_;
+#elif defined(MHD_USE_W32_THREADS)
+#include <windows.h>
+typedef HANDLE MHD_thread_handle_;
+#else
+#error "No threading API is available."
+#endif
+
+#if defined(MHD_USE_POSIX_THREADS)
+#define MHD_THRD_RTRN_TYPE_ void*
+#define MHD_THRD_CALL_SPEC_
+#elif defined(MHD_USE_W32_THREADS)
+#define MHD_THRD_RTRN_TYPE_ unsigned
+#define MHD_THRD_CALL_SPEC_ __stdcall
+#endif
+
+#if defined(MHD_USE_POSIX_THREADS)
+/**
+ * Wait until specified thread is ended
+ * @param thread ID to watch
+ * @return zero on success, nonzero on failure
+ */
+#define MHD_join_thread_(thread) pthread_join((thread), NULL)
+#elif defined(MHD_USE_W32_THREADS)
+/**
+ * Wait until specified thread is ended
+ * Close thread handle on success
+ * @param thread handle to watch
+ * @return zero on success, nonzero on failure
+ */
+#define MHD_join_thread_(thread) (WAIT_OBJECT_0 == WaitForSingleObject((thread), INFINITE) ? (CloseHandle((thread)), 0) : 1 )
+#endif
+
+#if defined(MHD_USE_W32_THREADS)
+#define MHD_W32_MUTEX_ 1
+#include <windows.h>
+typedef CRITICAL_SECTION MHD_mutex_;
+#elif defined(HAVE_PTHREAD_H) && defined(MHD_USE_POSIX_THREADS)
+#define MHD_PTHREAD_MUTEX_ 1
+typedef pthread_mutex_t MHD_mutex_;
+#else
+#error "No base mutex API is available."
+#endif
+
+#if defined(MHD_PTHREAD_MUTEX_)
+/**
+ * Create new mutex.
+ * @param mutex pointer to the mutex
+ * @return #MHD_YES on success, #MHD_NO on failure
+ */
+#define MHD_mutex_create_(mutex) \
+  ((0 == pthread_mutex_init ((mutex), NULL)) ? MHD_YES : MHD_NO)
+#elif defined(MHD_W32_MUTEX_)
+/**
+ * Create new mutex.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES on success, #MHD_NO on failure
+ */
+#define MHD_mutex_create_(mutex) \
+  ((NULL != (mutex) && 0 != InitializeCriticalSectionAndSpinCount((mutex),2000)) ? MHD_YES : MHD_NO)
+#endif
+
+#if defined(MHD_PTHREAD_MUTEX_)
+/**
+ * Destroy previously created mutex.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES on success, #MHD_NO on failure
+ */
+#define MHD_mutex_destroy_(mutex) \
+  ((0 == pthread_mutex_destroy ((mutex))) ? MHD_YES : MHD_NO)
+#elif defined(MHD_W32_MUTEX_)
+/**
+ * Destroy previously created mutex.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES on success, #MHD_NO on failure
+ */
+#define MHD_mutex_destroy_(mutex) \
+  ((NULL != (mutex)) ? (DeleteCriticalSection(mutex), MHD_YES) : MHD_NO)
+#endif
+
+#if defined(MHD_PTHREAD_MUTEX_)
+/**
+ * Acquire lock on previously created mutex.
+ * If mutex was already locked by other thread, function
+ * blocks until mutex becomes available.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES on success, #MHD_NO on failure
+ */
+#define MHD_mutex_lock_(mutex) \
+  ((0 == pthread_mutex_lock((mutex))) ? MHD_YES : MHD_NO)
+#elif defined(MHD_W32_MUTEX_)
+/**
+ * Acquire lock on previously created mutex.
+ * If mutex was already locked by other thread, function
+ * blocks until mutex becomes available.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES on success, #MHD_NO on failure
+ */
+#define MHD_mutex_lock_(mutex) \
+  ((NULL != (mutex)) ? (EnterCriticalSection((mutex)), MHD_YES) : MHD_NO)
+#endif
+
+#if defined(MHD_PTHREAD_MUTEX_)
+/**
+ * Try to acquire lock on previously created mutex.
+ * Function returns immediately.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES if mutex is locked, #MHD_NO if
+ * mutex was not locked.
+ */
+#define MHD_mutex_trylock_(mutex) \
+  ((0 == pthread_mutex_trylock((mutex))) ? MHD_YES : MHD_NO)
+#elif defined(MHD_W32_MUTEX_)
+/**
+ * Try to acquire lock on previously created mutex.
+ * Function returns immediately.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES if mutex is locked, #MHD_NO if
+ * mutex was not locked.
+ */
+#define MHD_mutex_trylock_(mutex) \
+  ((NULL != (mutex) && 0 != TryEnterCriticalSection ((mutex))) ? MHD_YES : MHD_NO)
+#endif
+
+#if defined(MHD_PTHREAD_MUTEX_)
+/**
+ * Unlock previously created and locked mutex.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES on success, #MHD_NO on failure
+ */
+#define MHD_mutex_unlock_(mutex) \
+  ((0 == pthread_mutex_unlock((mutex))) ? MHD_YES : MHD_NO)
+#elif defined(MHD_W32_MUTEX_)
+/**
+ * Unlock previously created and locked mutex.
+ * @param mutex pointer to mutex
+ * @return #MHD_YES on success, #MHD_NO on failure
+ */
+#define MHD_mutex_unlock_(mutex) \
+  ((NULL != (mutex)) ? (LeaveCriticalSection((mutex)), MHD_YES) : MHD_NO)
 #endif
 
 #endif // MHD_PLATFORM_INTERFACE_H

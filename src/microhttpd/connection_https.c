@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007, 2008, 2010 Daniel Pittman and Christian Grothoff
+     Copyright (C) 2007, 2008, 2010 Daniel Pittman and Christian Grothoff
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -134,8 +134,10 @@ MHD_tls_connection_handle_idle (struct MHD_Connection *connection)
   unsigned int timeout;
 
 #if DEBUG_STATES
-  MHD_DLOG (connection->daemon, "%s: state: %s\n",
-            __FUNCTION__, MHD_state_to_string (connection->state));
+  MHD_DLOG (connection->daemon,
+            "%s: state: %s\n",
+            __FUNCTION__,
+            MHD_state_to_string (connection->state));
 #endif
   timeout = connection->connection_timeout;
   if ( (timeout != 0) && (timeout <= (MHD_monotonic_time() - connection->last_activity)))

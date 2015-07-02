@@ -14,7 +14,7 @@
 /* disable digest Auth support */
 #undef DAUTH_SUPPORT
 
-/* disable epoll support */
+/* define to 0 to disable epoll support */
 #undef EPOLL_SUPPORT
 
 /* This is a FreeBSD system */
@@ -29,8 +29,9 @@
 /* Have clock_gettime */
 #undef HAVE_CLOCK_GETTIME
 
-/* Define to 1 if you have the <curl/curl.h> header file. */
-#undef HAVE_CURL_CURL_H
+/* Define to 1 if you have the declaration of `SOCK_NONBLOCK', and to 0 if you
+   don't. */
+#undef HAVE_DECL_SOCK_NONBLOCK
 
 /* Define to 1 if you have the declaration of `TCP_CORK', and to 0 if you
    don't. */
@@ -42,6 +43,9 @@
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
+
+/* Define if you have epoll_create1 function. */
+#undef HAVE_EPOLL_CREATE1
 
 /* Define to 1 if you have the <errno.h> header file. */
 #undef HAVE_ERRNO_H
@@ -57,9 +61,6 @@
 
 /* Define to 1 if you have `gmtime_s' function (only for W32). */
 #undef HAVE_GMTIME_S
-
-/* We have gnutls */
-#undef HAVE_GNUTLS
 
 /* Define to 1 if you have the <gnutls/gnutls.h> header file. */
 #undef HAVE_GNUTLS_GNUTLS_H
@@ -127,11 +128,23 @@
 /* Define to 1 if you have the <openssl/sha.h> header file. */
 #undef HAVE_OPENSSL_SHA_H
 
+/* Define to 1 if you have the `poll' function. */
+#undef HAVE_POLL
+
 /* Define to 1 if you have the <poll.h> header file. */
 #undef HAVE_POLL_H
 
+/* define to 1 if MHD was build with postprocessor.c */
+#undef HAVE_POSTPROCESSOR
+
 /* Define to 1 if you have the <pthread.h> header file. */
 #undef HAVE_PTHREAD_H
+
+/* Have PTHREAD_PRIO_INHERIT. */
+#undef HAVE_PTHREAD_PRIO_INHERIT
+
+/* Define if you have pthread_setname_np function. */
+#undef HAVE_PTHREAD_SETNAME_NP
 
 /* Define to 1 if you have the <search.h> header file. */
 #undef HAVE_SEARCH_H
@@ -159,9 +172,6 @@
 
 /* Define to 1 if you have the <string.h> header file. */
 #undef HAVE_STRING_H
-
-/* Define to 1 if you have the <sys/epoll.h> header file. */
-#undef HAVE_SYS_EPOLL_H
 
 /* Define to 1 if you have the <sys/mman.h> header file. */
 #undef HAVE_SYS_MMAN_H
@@ -272,9 +282,6 @@
 /* Define to use pair of sockets instead of pipes for signaling */
 #undef MHD_DONT_USE_PIPES
 
-/* gcrypt lib version */
-#undef MHD_GCRYPT_VERSION
-
 /* gnuTLS lib version - used in conjunction with cURL */
 #undef MHD_REQ_CURL_GNUTLS_VERSION
 
@@ -287,14 +294,17 @@
 /* required cURL version to run tests */
 #undef MHD_REQ_CURL_VERSION
 
+/* define to use pthreads */
+#undef MHD_USE_POSIX_THREADS
+
+/* define to use W32 threads */
+#undef MHD_USE_W32_THREADS
+
 /* This is a MinGW system */
 #undef MINGW
 
 /* This is a NetBSD system */
 #undef NETBSD
-
-/* Define to 1 if your C compiler doesn't accept -c and -o together. */
-#undef NO_MINUS_C_MINUS_O
 
 /* This is an OpenBSD system */
 #undef OPENBSD
@@ -328,6 +338,10 @@
 
 /* Define to the version of this package. */
 #undef PACKAGE_VERSION
+
+/* Define to necessary symbol if this constant uses a non-standard name on
+   your system. */
+#undef PTHREAD_CREATE_JOINABLE
 
 /* This is a Solaris system */
 #undef SOLARIS

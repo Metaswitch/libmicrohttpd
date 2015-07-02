@@ -1,3 +1,4 @@
+# This Makefile.am is in the public domain
 SUBDIRS  = .
 
 if USE_COVERAGE
@@ -9,6 +10,7 @@ if ENABLE_HTTPS
 endif
 
 AM_CPPFLAGS = \
+-DCPU_COUNT=$(CPU_COUNT) \
 -I$(top_srcdir) \
 -I$(top_srcdir)/src/microhttpd \
 -I$(top_srcdir)/src/include \
@@ -16,6 +18,7 @@ $(LIBCURL_CPPFLAGS)
 
 if !HAVE_W32
 PERF_GET_CONCURRENT=perf_get_concurrent
+TEST_CONCURRENT_STOP=test_concurrent_stop
 if HAVE_CURL_BINARY
 CURL_FORK_TEST = test_get_response_cleanup
 endif
@@ -24,11 +27,11 @@ endif
 if HAVE_CURL
 check_PROGRAMS = \
   test_start_stop \
-  test_quiesce \
   test_get \
   test_get_sendfile \
   test_urlparse \
   test_put \
+  $(TEST_CONCURRENT_STOP) \
   test_process_headers \
   test_process_arguments \
   test_parse_cookies \
@@ -48,6 +51,10 @@ check_PROGRAMS = \
   $(CURL_FORK_TEST) \
   perf_get $(PERF_GET_CONCURRENT)
 
+if HAVE_POSIX_THREADS
+check_PROGRAMS += \
+  test_quiesce
+endif
 
 if HAVE_POSTPROCESSOR
  check_PROGRAMS += \
@@ -80,6 +87,12 @@ test_start_stop_SOURCES = \
 test_start_stop_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la
 
+test_concurrent_stop_SOURCES = \
+  test_concurrent_stop.c
+test_concurrent_stop_LDADD = \
+  $(top_builddir)/src/microhttpd/libmicrohttpd.la \
+ @LIBCURL@
+
 test_options_SOURCES = \
   test_options.c
 test_options_LDADD = \
@@ -93,9 +106,11 @@ test_get_LDADD = \
 
 test_quiesce_SOURCES = \
   test_quiesce.c
+test_quiesce_CFLAGS = \
+  $(PTHREAD_CFLAGS) $(AM_CFLAGS)
 test_quiesce_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
-  @LIBCURL@
+  $(PTHREAD_LIBS) @LIBCURL@
 
 test_callback_SOURCES = \
   test_callback.c
@@ -121,22 +136,26 @@ test_digestauth_SOURCES = \
   test_digestauth.c
 test_digestauth_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
-  @LIBCURL@ @LIBGCRYPT_LIBS@
+  @LIBGCRYPT_LIBS@ @LIBCURL@
 
 test_digestauth_with_arguments_SOURCES = \
   test_digestauth_with_arguments.c
 test_digestauth_with_arguments_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
-  @LIBCURL@ @LIBGCRYPT_LIBS@
+  @LIBGCRYPT_LIBS@ @LIBCURL@
 
 test_get_sendfile_SOURCES = \
   test_get_sendfile.c
 test_get_sendfile_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
   @LIBCURL@
+test_get_sendfile_DEPENDENCIES =
+
 if HAVE_W32
 test_get_sendfile_LDADD += \
- $(top_builddir)/src/platform/libmicrohttpd_w32.la
+ $(top_builddir)/src/platform/libplatform_interface.la
+test_get_sendfile_DEPENDENCIES += \
+ $(top_builddir)/src/platform/libplatform_interface.la
 endif
 
 test_urlparse_SOURCES = \
@@ -184,7 +203,7 @@ test_postform_SOURCES = \
   test_postform.c
 test_postform_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
-  @LIBCURL@  @LIBGCRYPT_LIBS@
+  @LIBGCRYPT_LIBS@ @LIBCURL@
 
 test_post_loop_SOURCES = \
   test_post_loop.c
@@ -215,9 +234,13 @@ test_get_sendfile11_SOURCES = \
 test_get_sendfile11_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
   @LIBCURL@
+test_get_sendfile11_DEPENDENCIES =
+
 if HAVE_W32
 test_get_sendfile11_LDADD += \
-  $(top_builddir)/src/platform/libmicrohttpd_w32.la
+  $(top_builddir)/src/platform/libplatform_interface.la
+test_get_sendfile11_DEPENDENCIES += \
+  $(top_builddir)/src/platform/libplatform_interface.la
 endif
 
 test_post11_SOURCES = \
@@ -230,7 +253,7 @@ test_postform11_SOURCES = \
   test_postform.c
 test_postform11_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
-  @LIBCURL@  @LIBGCRYPT_LIBS@
+  @LIBGCRYPT_LIBS@ @LIBCURL@
 
 test_post_loop11_SOURCES = \
   test_post_loop.c
@@ -285,4 +308,3 @@ test_timeout_SOURCES = \
 test_timeout_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
   @LIBCURL@
-

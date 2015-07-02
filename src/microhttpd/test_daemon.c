@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007 Christian Grothoff
+     Copyright (C) 2007 Christian Grothoff
 
      libmicrohttpd is free software; you can redistribute it and/or modify
      it under the terms of the GNU General Public License as published
@@ -24,7 +24,6 @@
  * @author Christian Grothoff
  */
 
-#include "platform.h"
 #include "platform.h"
 #include "microhttpd.h"
 #include <stdlib.h>

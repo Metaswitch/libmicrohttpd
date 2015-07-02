@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007, 2009, 2010 Daniel Pittman and Christian Grothoff
+     Copyright (C) 2007, 2009, 2010 Daniel Pittman and Christian Grothoff
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -263,7 +263,6 @@ MHD_pool_reset (struct MemoryPool *pool,
 		void *keep,
 		size_t size)
 {
-  size = ROUND_TO_ALIGN (size);
   if (NULL != keep)
     {
       if (keep != pool->memory)
@@ -271,12 +270,13 @@ MHD_pool_reset (struct MemoryPool *pool,
           memmove (pool->memory, keep, size);
           keep = pool->memory;
         }
-      pool->pos = size;
     }
   pool->end = pool->size;
   memset (&pool->memory[size],
 	  0,
 	  pool->size - size);
+  if (NULL != keep)
+    pool->pos = ROUND_TO_ALIGN(size);
   return keep;
 }
 

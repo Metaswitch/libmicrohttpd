@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007 Daniel Pittman and Christian Grothoff
+     Copyright (C) 2007 Daniel Pittman and Christian Grothoff
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -95,7 +95,7 @@ MHD_DLOG (const struct MHD_Daemon *daemon, const char *format, ...)
 {
   va_list va;
 
-  if ((daemon->options & MHD_USE_DEBUG) == 0)
+  if (0 == (daemon->options & MHD_USE_DEBUG))
     return;
   va_start (va, format);
   daemon->custom_error_log (daemon->custom_error_log_cls, format, va);
@@ -105,20 +105,31 @@ MHD_DLOG (const struct MHD_Daemon *daemon, const char *format, ...)
 
 
 /**
- * Process escape sequences ('+'=space, %HH) Updates val in place; the
+ * Convert all occurences of '+' to ' '.
+ *
+ * @param arg string that is modified (in place), must be 0-terminated
+ */
+void
+MHD_unescape_plus (char *arg)
+{
+  char *p;
+
+  for (p=strchr (arg, '+'); NULL != p; p = strchr (p + 1, '+'))
+    *p = ' ';
+}
+
+
+/**
+ * Process escape sequences ('%HH') Updates val in place; the
  * result should be UTF-8 encoded and cannot be larger than the input.
  * The result must also still be 0-terminated.
  *
- * @param cls closure (use NULL)
- * @param connection handle to connection, not used
  * @param val value to unescape (modified in the process)
  * @return length of the resulting val (strlen(val) maybe
  *  shorter afterwards due to elimination of escape sequences)
  */
 size_t
-MHD_http_unescape (void *cls,
-		   struct MHD_Connection *connection,
-		   char *val)
+MHD_http_unescape (char *val)
 {
   char *rpos = val;
   char *wpos = val;
@@ -130,11 +141,6 @@ MHD_http_unescape (void *cls,
     {
       switch (*rpos)
 	{
-	case '+':
-	  *wpos = ' ';
-	  wpos++;
-	  rpos++;
-	  break;
 	case '%':
           if ( ('\0' == rpos[1]) ||
                ('\0' == rpos[2]) )
@@ -165,6 +171,13 @@ MHD_http_unescape (void *cls,
 }
 
 
+/**
+ * Equivalent to time(NULL) but tries to use some sort of monotonic
+ * clock that isn't affected by someone setting the system real time
+ * clock.
+ *
+ * @return 'current' time
+ */
 time_t
 MHD_monotonic_time (void)
 {

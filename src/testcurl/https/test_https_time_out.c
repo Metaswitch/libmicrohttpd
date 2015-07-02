@@ -1,6 +1,6 @@
 /*
  This file is part of libmicrohttpd
- (C) 2007 Christian Grothoff
+ Copyright (C) 2007 Christian Grothoff
 
  libmicrohttpd is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published
@@ -43,8 +43,6 @@ extern const char srv_self_signed_cert_pem[];
 
 static const int TIME_OUT = 3;
 
-static const char *http_get_req = "GET / HTTP/1.1\r\n\r\n";
-
 static int
 test_tls_session_time_out (gnutls_session_t session)
 {
@@ -64,7 +62,7 @@ test_tls_session_time_out (gnutls_session_t session)
   sa.sin_port = htons (DEAMON_TEST_PORT);
   sa.sin_addr.s_addr = htonl (INADDR_LOOPBACK);
 
-  gnutls_transport_set_ptr (session, (gnutls_transport_ptr_t) (long) sd);
+  gnutls_transport_set_ptr (session, (gnutls_transport_ptr_t) (intptr_t) sd);
 
   ret = connect (sd, &sa, sizeof (struct sockaddr_in));
 

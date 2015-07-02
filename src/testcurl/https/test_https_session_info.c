@@ -1,6 +1,6 @@
 /*
  This file is part of libmicrohttpd
- (C) 2007 Christian Grothoff
+ Copyright (C) 2007 Christian Grothoff
 
  libmicrohttpd is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published
@@ -48,22 +48,34 @@ query_session_ahc (void *cls, struct MHD_Connection *connection,
 {
   struct MHD_Response *response;
   int ret;
-  
+
   if (NULL == *ptr)
     {
       *ptr = &query_session_ahc;
       return MHD_YES;
     }
 
-  if (GNUTLS_SSL3 != 
+  if (GNUTLS_TLS1_1 !=
       (ret = MHD_get_connection_info
        (connection,
 	MHD_CONNECTION_INFO_PROTOCOL)->protocol))
     {
-      fprintf (stderr, "Error: requested protocol mismatch (wanted %d, got %d)\n",
-               GNUTLS_SSL3,
-	       ret);
-      return -1;
+      if (GNUTLS_TLS1_2 == ret)
+      {
+        /* as usual, TLS implementations sometimes don't
+           quite do what was asked, just mildly complain... */
+        fprintf (stderr,
+                 "Warning: requested TLS 1.1, got TLS 1.2\n");
+      }
+      else
+      {
+        /* really different version... */
+        fprintf (stderr,
+                 "Error: requested protocol mismatch (wanted %d, got %d)\n",
+                 GNUTLS_TLS1_1,
+                 ret);
+        return -1;
+      }
     }
 
   response = MHD_create_response_from_buffer (strlen (EMPTY_PAGE),
@@ -122,7 +134,7 @@ test_query_session ()
   curl_easy_setopt (c, CURLOPT_WRITEFUNCTION, &copyBuffer);
   curl_easy_setopt (c, CURLOPT_FILE, &cbc);
   /* TLS options */
-  curl_easy_setopt (c, CURLOPT_SSLVERSION, CURL_SSLVERSION_SSLv3);
+  curl_easy_setopt (c, CURLOPT_SSLVERSION, CURL_SSLVERSION_TLSv1_1);
   curl_easy_setopt (c, CURLOPT_SSL_CIPHER_LIST, aes256_sha);
   /* currently skip any peer authentication */
   curl_easy_setopt (c, CURLOPT_SSL_VERIFYPEER, 0);

@@ -1,12 +1,12 @@
+# This Makefile.am is in the public domain
 AM_CPPFLAGS = \
   -I$(top_srcdir)/src/include \
   -I$(top_srcdir)/src/microhttpd
 
-AM_CFLAGS = $(HIDDEN_VISIBILITY_CFLAGS) \
-  @LIBGCRYPT_CFLAGS@
+AM_CFLAGS = $(HIDDEN_VISIBILITY_CFLAGS)
 
 if HAVE_W32
-MHD_W32_LIB = $(top_builddir)/src/platform/libmicrohttpd_w32.la
+MHD_W32_LIB = $(top_builddir)/src/platform/libplatform_interface.la
 endif
 
 lib_LTLIBRARIES = \
@@ -16,7 +16,7 @@ noinst_DATA =
 MOSTLYCLEANFILES =
 
 if W32_SHARED_LIB_EXP
-W32_MHD_LIB_LDFLAGS = -Wl,--output-def,$(lt_cv_objdir)/libmicrohttpd.def
+W32_MHD_LIB_LDFLAGS = -Wl,--output-def,$(lt_cv_objdir)/libmicrohttpd.def -XCClinker -static-libgcc
 noinst_DATA += $(lt_cv_objdir)/libmicrohttpd.lib $(lt_cv_objdir)/libmicrohttpd.def $(lt_cv_objdir)/libmicrohttpd.exp
 MOSTLYCLEANFILES += $(lt_cv_objdir)/libmicrohttpd.lib $(lt_cv_objdir)/libmicrohttpd.def $(lt_cv_objdir)/libmicrohttpd.exp
 
@@ -29,14 +29,14 @@ if USE_MS_LIB_TOOL
 	@echo Creating $@ and libmicrohttpd.exp by $(MS_LIB_TOOL)... && \
 	dll_name=`$(EGREP) -o dlname=\'.+\' libmicrohttpd.la` && \
 	dll_name=$${dll_name#*\'} && dll_name=$${dll_name%\'} && test -n "$$dll_name" && \
-	echo Using .dll filename: $$dll_name.. && \
-	$(MS_LIB_TOOL) -def:$(lt_cv_objdir)/libmicrohttpd.def -name:$$dll_name -out:$@ $(libmicrohttpd_la_OBJECTS:.lo=.o)
+	echo Creating $$dll_name by $(MS_LIB_TOOL).. && cd "$(lt_cv_objdir)" && \
+	$(MS_LIB_TOOL) -def:libmicrohttpd.def -name:$$dll_name -out:libmicrohttpd.lib $(libmicrohttpd_la_OBJECTS:.lo=.o) && cd ..
 else
 	@echo Creating $@ and libmicrohttpd.exp by $(DLLTOOL)... && \
 	dll_name=`$(EGREP) -o dlname=\'.+\' libmicrohttpd.la` && \
 	dll_name=$${dll_name#*\'} && dll_name=$${dll_name%\'} && test -n "$$dll_name" && \
-	echo Using .dll filename: $$dll_name.. && \
-	$(DLLTOOL) -d $(lt_cv_objdir)/libmicrohttpd.def -D $$dll_name -l $@ $(libmicrohttpd_la_OBJECTS:.lo=.o) -e $(lt_cv_objdir)/libmicrohttpd.exp && \
+	echo Creating $$dll_name by $(DLLTOOL).. && cd "$(lt_cv_objdir)" && \
+	$(DLLTOOL) -d ./libmicrohttpd.def -D $$dll_name -l libmicrohttpd.lib $(libmicrohttpd_la_OBJECTS:.lo=.o) -e ./libmicrohttpd.exp && cd .. &&\
 	echo Created libmicrohttpd.exp and libmicrohttpd.lib.
 endif
 else
@@ -64,13 +64,17 @@ libmicrohttpd_la_SOURCES = \
   memorypool.c memorypool.h \
   response.c response.h
 libmicrohttpd_la_CPPFLAGS = \
-  $(AM_CPPFLAGS) \
+  $(AM_CPPFLAGS) $(MHD_LIB_CPPFLAGS) \
   -DBUILDING_MHD_LIB=1
+libmicrohttpd_la_CFLAGS = \
+  $(AM_CFLAGS) $(MHD_LIB_CFLAGS)
 libmicrohttpd_la_LDFLAGS = \
   $(MHD_LIB_LDFLAGS) \
   $(W32_MHD_LIB_LDFLAGS) \
   -version-info @LIB_VERSION_CURRENT@:@LIB_VERSION_REVISION@:@LIB_VERSION_AGE@
 libmicrohttpd_la_LIBADD = \
+  $(MHD_W32_LIB) $(MHD_LIBDEPS)
+libmicrohttpd_la_DEPENDENCIES = \
   $(MHD_W32_LIB)
 
 if HAVE_W32
@@ -90,9 +94,12 @@ libmicrohttpd_la_LIBADD += $(MHD_DLL_RES_LO)
 # by empty object generated from empty c-file. Later libtool will
 # use .libs/file.o for shared lib and empty file.o for static lib.
 # This implementation is based on trick found in liblzma.
+# Note: windres does not understand '-isystem' flag, so all
+# possible '-isystem' flags are replaced by simple '-I' flags.
 $(MHD_DLL_RES_LO): $(MHD_DLL_RES_SRC)
-	$(LIBTOOL) $(AM_V_lt) --tag=RC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(RC) $(RCFLAGS) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(libmicrohttpd_la_CPPFLAGS) $(CPPFLAGS) $< -o $@ && \
-	echo > $@-empty.c && $(CC) $(AM_CFLAGS) $(CFLAGS) -c $@-empty.c -o $(@:.lo=.o) && rm -f $@-tmp.c
+	RC_CPP_FLAGS=" $(DEFAULT_INCLUDES) $(INCLUDES) $(libmicrohttpd_la_CPPFLAGS) $(CPPFLAGS) " && \
+	$(LIBTOOL) $(AM_V_lt) --tag=RC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(RC) $(RCFLAGS) $(DEFS) $${RC_CPP_FLAGS// -isystem / -I } $< -o $@ && \
+	echo > $@-empty.c && $(CC) $(AM_CFLAGS) $(CFLAGS) -c $@-empty.c -o $(@:.lo=.o) && rm -f $@-empty.c
 endif
 
 if USE_COVERAGE
@@ -124,7 +131,6 @@ endif
 if ENABLE_HTTPS
 libmicrohttpd_la_SOURCES += \
   connection_https.c connection_https.h
-libmicrohttpd_la_LIBADD += -lgnutls @LIBGCRYPT_LIBS@
 endif
 
 
@@ -148,17 +154,23 @@ test_daemon_LDADD = \
 
 test_postprocessor_SOURCES = \
   test_postprocessor.c
+test_postprocessor_CPPFLAGS = \
+  $(AM_CPPFLAGS) $(GNUTLS_CPPFLAGS)
 test_postprocessor_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
   $(MHD_W32_LIB)
 
 test_postprocessor_amp_SOURCES = \
   test_postprocessor_amp.c
+test_postprocessor_amp_CPPFLAGS = \
+  $(AM_CPPFLAGS) $(GNUTLS_CPPFLAGS)
 test_postprocessor_amp_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la
 
 test_postprocessor_large_SOURCES = \
   test_postprocessor_large.c
+test_postprocessor_large_CPPFLAGS = \
+  $(AM_CPPFLAGS) $(GNUTLS_CPPFLAGS)
 test_postprocessor_large_LDADD = \
   $(top_builddir)/src/microhttpd/libmicrohttpd.la \
   $(MHD_W32_LIB)

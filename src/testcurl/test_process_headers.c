@@ -1,7 +1,7 @@
 
 /*
      This file is part of libmicrohttpd
-     (C) 2007 Christian Grothoff
+     Copyright (C) 2007 Christian Grothoff
 
      libmicrohttpd is free software; you can redistribute it and/or modify
      it under the terms of the GNU General Public License as published
@@ -20,7 +20,7 @@
 */
 
 /**
- * @file daemontest_process_headers.c
+ * @file test_process_headers.c
  * @brief  Testcase for HTTP header access
  * @author Christian Grothoff
  */
@@ -35,6 +35,13 @@
 
 #ifndef WINDOWS
 #include <unistd.h>
+#endif
+
+#if defined(CPU_COUNT) && (CPU_COUNT+0) < 2
+#undef CPU_COUNT
+#endif
+#if !defined(CPU_COUNT)
+#define CPU_COUNT 2
 #endif
 
 static int oneone;
@@ -250,7 +257,7 @@ testMultithreadedPoolGet ()
   cbc.pos = 0;
   d = MHD_start_daemon (MHD_USE_SELECT_INTERNALLY | MHD_USE_DEBUG,
                         21080, NULL, NULL, &ahc_echo, "GET",
-                        MHD_OPTION_THREAD_POOL_SIZE, 4, MHD_OPTION_END);
+                        MHD_OPTION_THREAD_POOL_SIZE, CPU_COUNT, MHD_OPTION_END);
   if (d == NULL)
     return 16;
   c = curl_easy_init ();
@@ -415,10 +422,8 @@ main (int argc, char *const *argv)
 {
   unsigned int errorCount = 0;
 
-  oneone = NULL != strstr (argv[0], "11");
-  if (0 != curl_global_init (CURL_GLOBAL_WIN32))
-    return 2;
-  errorCount += testInternalGet ();
+  oneone = (NULL != strrchr (argv[0], (int) '/')) ?
+    (NULL != strstr (strrchr (argv[0], (int) '/'), "11")) : 0;
   errorCount += testMultithreadedGet ();
   errorCount += testMultithreadedPoolGet ();
   errorCount += testExternalGet ();

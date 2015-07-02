@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2010, 2011, 2012 Daniel Pittman and Christian Grothoff
+     Copyright (C) 2010, 2011, 2012 Daniel Pittman and Christian Grothoff
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -119,15 +119,25 @@ MHD_queue_basic_auth_fail_response (struct MHD_Connection *connection,
 {
   int ret;
   size_t hlen = strlen(realm) + strlen("Basic realm=\"\"") + 1;
-  char header[hlen];
-
-  snprintf (header, 
-	    sizeof (header), 
+  char *header;
+  
+  header = (char*)malloc(hlen);
+  if (NULL == header)
+  {
+#if HAVE_MESSAGES
+    MHD_DLOG(connection->daemon,
+		   "Failed to allocate memory for auth header\n");
+#endif /* HAVE_MESSAGES */
+    return MHD_NO;
+  }
+  MHD_snprintf_ (header, 
+	    hlen, 
 	    "Basic realm=\"%s\"", 
 	    realm);
   ret = MHD_add_response_header (response,
 				 MHD_HTTP_HEADER_WWW_AUTHENTICATE,
 				 header);
+  free(header);
   if (MHD_YES == ret)
     ret = MHD_queue_response (connection, 
 			      MHD_HTTP_UNAUTHORIZED, 

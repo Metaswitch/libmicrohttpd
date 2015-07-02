@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007, 2009, 2010 Daniel Pittman and Christian Grothoff
+     Copyright (C) 2007, 2009, 2010 Daniel Pittman and Christian Grothoff
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -26,6 +26,16 @@
 
 #include "internal.h"
 #include "response.h"
+
+#if defined(_WIN32) && defined(MHD_W32_MUTEX_)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN 1
+#endif /* !WIN32_LEAN_AND_MEAN */
+#include <windows.h>
+#endif /* _WIN32 && MHD_W32_MUTEX_ */
+#if defined(_WIN32)
+#include <io.h> /* for lseek(), read() */
+#endif /* _WIN32 */
 
 
 /**
@@ -241,10 +251,10 @@ MHD_create_response_from_callback (uint64_t size,
   if (NULL == (response = malloc (sizeof (struct MHD_Response) + block_size)))
     return NULL;
   memset (response, 0, sizeof (struct MHD_Response));
-  response->fd = MHD_INVALID_SOCKET;
+  response->fd = -1;
   response->data = (void *) &response[1];
   response->data_buffer_size = block_size;
-  if (0 != pthread_mutex_init (&response->mutex, NULL))
+  if (MHD_YES != MHD_mutex_create_ (&response->mutex))
     {
       free (response);
       return NULL;
@@ -255,6 +265,40 @@ MHD_create_response_from_callback (uint64_t size,
   response->reference_count = 1;
   response->total_size = size;
   return response;
+}
+
+
+/**
+ * Set special flags and options for a response.
+ *
+ * @param response the response to modify
+ * @param flags to set for the response
+ * @param ... #MHD_RO_END terminated list of options
+ * @return #MHD_YES on success, #MHD_NO on error
+ */
+int
+MHD_set_response_options (struct MHD_Response *response,
+                          enum MHD_ResponseFlags flags,
+                          ...)
+{
+  va_list ap;
+  int ret;
+  enum MHD_ResponseOptions ro;
+
+  ret = MHD_YES;
+  response->flags = flags;
+  va_start (ap, flags);
+  while (MHD_RO_END != (ro = va_arg (ap, enum MHD_ResponseOptions)))
+  {
+    switch (ro)
+    {
+    default:
+      ret = MHD_NO;
+      break;
+    }
+  }
+  va_end (ap);
+  return ret;
 }
 
 
@@ -296,7 +340,7 @@ free_callback (void *cls)
   struct MHD_Response *response = cls;
 
   (void) close (response->fd);
-  response->fd = MHD_INVALID_SOCKET;
+  response->fd = -1;
 }
 
 
@@ -380,8 +424,8 @@ MHD_create_response_from_data (size_t size,
   if (NULL == (response = malloc (sizeof (struct MHD_Response))))
     return NULL;
   memset (response, 0, sizeof (struct MHD_Response));
-  response->fd = MHD_INVALID_SOCKET;
-  if (0 != pthread_mutex_init (&response->mutex, NULL))
+  response->fd = -1;
+  if (MHD_YES != MHD_mutex_create_ (&response->mutex))
     {
       free (response);
       return NULL;
@@ -390,7 +434,7 @@ MHD_create_response_from_data (size_t size,
     {
       if (NULL == (tmp = malloc (size)))
         {
-	  pthread_mutex_destroy (&response->mutex);
+          (void) MHD_mutex_destroy_ (&response->mutex);
           free (response);
           return NULL;
         }
@@ -447,14 +491,14 @@ MHD_destroy_response (struct MHD_Response *response)
 
   if (NULL == response)
     return;
-  pthread_mutex_lock (&response->mutex);
+  (void) MHD_mutex_lock_ (&response->mutex);
   if (0 != --(response->reference_count))
     {
-      pthread_mutex_unlock (&response->mutex);
+      (void) MHD_mutex_unlock_ (&response->mutex);
       return;
     }
-  pthread_mutex_unlock (&response->mutex);
-  pthread_mutex_destroy (&response->mutex);
+  (void) MHD_mutex_unlock_ (&response->mutex);
+  (void) MHD_mutex_destroy_ (&response->mutex);
   if (response->crfc != NULL)
     response->crfc (response->crc_cls);
   while (NULL != response->first_header)
@@ -472,9 +516,9 @@ MHD_destroy_response (struct MHD_Response *response)
 void
 MHD_increment_response_rc (struct MHD_Response *response)
 {
-  pthread_mutex_lock (&response->mutex);
+  (void) MHD_mutex_lock_ (&response->mutex);
   (response->reference_count)++;
-  pthread_mutex_unlock (&response->mutex);
+  (void) MHD_mutex_unlock_ (&response->mutex);
 }
 
 

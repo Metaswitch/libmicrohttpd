@@ -1,5 +1,5 @@
 # This file is part of libmicrohttpd.
-# (C) 2006-2014 Christian Grothoff (and other contributing authors)
+# (C) 2006-2015 Christian Grothoff (and other contributing authors)
 #
 # libmicrohttpd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published
@@ -20,17 +20,17 @@
 # Process this file with autoconf to produce a configure script.
 #
 #
-AC_PREREQ(2.57)
+AC_PREREQ([2.60])
 LT_PREREQ([2.4.0])
-AC_INIT([libmicrohttpd], [0.9.34],[libmicrohttpd@gnu.org])
+AC_INIT([libmicrohttpd],[0.9.42],[libmicrohttpd@gnu.org])
 AM_INIT_AUTOMAKE([silent-rules] [subdir-objects])
 AC_CONFIG_HEADERS([MHD_config.h])
 AC_CONFIG_MACRO_DIR([m4])
 AH_TOP([#define _GNU_SOURCE  1])
 
-LIB_VERSION_CURRENT=33
+LIB_VERSION_CURRENT=42
 LIB_VERSION_REVISION=0
-LIB_VERSION_AGE=23
+LIB_VERSION_AGE=32
 AC_SUBST(LIB_VERSION_CURRENT)
 AC_SUBST(LIB_VERSION_REVISION)
 AC_SUBST(LIB_VERSION_AGE)
@@ -72,7 +72,6 @@ AC_CANONICAL_HOST
 AM_PROG_CC_C_O
 LT_INIT([win32-dll])
 LT_LANG([Windows Resource])
-AC_C_BIGENDIAN
 
 PACKAGE_VERSION_MAJOR=${PACKAGE_VERSION%.*.*}
 PACKAGE_VERSION_MINOR=${PACKAGE_VERSION%.*}; PACKAGE_VERSION_MINOR=${PACKAGE_VERSION_MINOR#*.}
@@ -82,96 +81,81 @@ AC_SUBST([PACKAGE_VERSION_MINOR])
 AC_SUBST([PACKAGE_VERSION_SUBMINOR])
 AC_CONFIG_FILES([src/microhttpd/microhttpd_dll_res.rc])
 
-AC_CHECK_MEMBER([struct sockaddr_in.sin_len],
-   [ AC_DEFINE(HAVE_SOCKADDR_IN_SIN_LEN, 1, [Do we have sockaddr_in.sin_len?])
-   ],
-   [],
-   [
-      #include <sys/types.h>
-      #include <sys/socket.h>
-      #include <netinet/in.h>
-   ])
+MHD_LIB_CPPFLAGS=""
+MHD_LIB_CFLAGS=""
+MHD_LIB_LDFLAGS=""
+MHD_LIBDEPS=""
 
-AC_CHECK_PROG(HAVE_CURL_BINARY,[curl],true,false)
-AM_CONDITIONAL(HAVE_CURL_BINARY,$HAVE_CURL_BINARY)
-AC_CHECK_PROG(HAVE_MAKEINFO_BINARY,[makeinfo],true,false)
-AM_CONDITIONAL(HAVE_MAKEINFO_BINARY,$HAVE_MAKEINFO_BINARY)
+AC_ARG_WITH([threads],
+   [AC_HELP_STRING([--with-threads=LIB],[choose threading library (posix, w32, auto) [auto]])],
+   [], [with_threads='auto'])
+test "x$with_threads" = "xwin32" && with_threads='w32'
+test "x$with_threads" = "xpthreads" && with_threads='posix'
 
-# set GCC options
-# use '-fno-strict-aliasing', but only if the compiler can take it
-if gcc -fno-strict-aliasing -S -o /dev/null -xc /dev/null >/dev/null 2>&1;
-then
- CFLAGS="-fno-strict-aliasing $CFLAGS"
-fi
+# Check for posix threads support
+AX_PTHREAD([HAVE_POSIX_THREADS='yes'],[HAVE_POSIX_THREADS='no'])
+AM_CONDITIONAL([HAVE_POSIX_THREADS],[test "x$HAVE_POSIX_THREADS" = "xyes"])
+# Simple check for W32 threads support
+AC_CHECK_HEADER([windows.h],
+  [
+    AC_MSG_CHECKING([for CreateThread()])
+    AC_LINK_IFELSE(
+      [AC_LANG_PROGRAM([#include <windows.h>], [ HANDLE h = CreateThread(NULL, 0, NULL, NULL, 0, NULL);])],
+      [
+        AC_MSG_RESULT([yes])
+        HAVE_W32_THREADS='yes'
+      ],
+      [
+        AC_MSG_RESULT([no])
+        HAVE_W32_THREADS='no'
+      ])
+  ],
+  [HAVE_W32_THREADS='no'])
 
 # for pkg-config
 MHD_LIBDEPS=""
-epoll=0
+MHD_REQ_PRIVATE=''
 # Check system type
 case "$host_os" in
 *darwin* | *rhapsody* | *macosx*)
      AC_DEFINE_UNQUOTED(OSX,1,[This is an OS X system])
      CFLAGS="-no-cpp-precomp -fno-common $CFLAGS"
-     AM_CONDITIONAL(HAVE_GNU_LD, false)
      ;;
 freebsd*)
      AC_DEFINE_UNQUOTED(SOMEBSD,1,[This is a BSD system])
      AC_DEFINE_UNQUOTED(FREEBSD,1,[This is a FreeBSD system])
-     AM_CONDITIONAL(HAVE_GNU_LD, true)
-     CFLAGS="-D_THREAD_SAFE $CFLAGS"
      ;;
 openbsd*)
      AC_DEFINE_UNQUOTED(SOMEBSD,1,[This is a BSD system])
      AC_DEFINE_UNQUOTED(OPENBSD,1,[This is an OpenBSD system])
-     AM_CONDITIONAL(HAVE_GNU_LD, true)
      ;;
 netbsd*)
      AC_DEFINE_UNQUOTED(SOMEBSD,1,[This is a BSD system])
      AC_DEFINE_UNQUOTED(NETBSD,1,[This is a NetBSD system])
-     AM_CONDITIONAL(HAVE_GNU_LD, true)
      ;;
 *solaris*)
      AC_DEFINE_UNQUOTED(SOLARIS,1,[This is a Solaris system])
      AC_DEFINE_UNQUOTED(_REENTRANT,1,[Need with solaris or errno doesnt work])
-     AM_CONDITIONAL(HAVE_GNU_LD, false)
-     LDFLAGS="$LDFLAGS -lpthread"
+     AC_SEARCH_LIBS(gethostbyname, nsl)
+     AC_SEARCH_LIBS(socket, socket)
      ;;
 *arm-linux*)
      AC_DEFINE_UNQUOTED(LINUX,1,[This is a Linux kernel])
      AC_DEFINE_UNQUOTED(HAVE_LISTEN_SHUTDOWN,1,[can use shutdown on listen sockets])
-     CFLAGS="-D_REENTRANT -fPIC -pipe $CFLAGS"
-     AM_CONDITIONAL(HAVE_GNU_LD, true)
-     AC_MSG_CHECKING(whether to support epoll)
-     AC_ARG_ENABLE([epoll],
-		AS_HELP_STRING([--disable-epoll],
-			[disable epoll]),
-		[enable_epoll=${enableval}],
-		[enable_epoll=yes])
-     AC_MSG_RESULT($enable_epoll)
+     CFLAGS="-fPIC -pipe $CFLAGS"
      ;;
 *linux*)
      AC_DEFINE_UNQUOTED(LINUX,1,[This is a Linux kernel])
      AC_DEFINE_UNQUOTED(HAVE_LISTEN_SHUTDOWN,1,[can use shutdown on listen sockets])
-     AM_CONDITIONAL(HAVE_GNU_LD, true)
-     AC_MSG_CHECKING(whether to support epoll)
-     AC_ARG_ENABLE([epoll],
-		AS_HELP_STRING([--disable-epoll],
-			[disable epoll]),
-		[enable_epoll=${enableval}],
-		[enable_epoll=yes])
-     AC_MSG_RESULT($enable_epoll)
      ;;
 *cygwin*)
      AC_DEFINE_UNQUOTED(CYGWIN,1,[This is a Cygwin system])
-     AM_CONDITIONAL(HAVE_GNU_LD, false)
-     LDFLAGS="$LDFLAGS"
      os_is_windows=yes
      ;;
 *mingw*)
      AC_DEFINE_UNQUOTED(MINGW,1,[This is a MinGW system])
      AC_DEFINE_UNQUOTED(WINDOWS,1,[This is a Windows system])
-     LDFLAGS="$LDFLAGS -lws2_32"
-     AM_CONDITIONAL(HAVE_GNU_LD, true)
+     LIBS="$LIBS -lws2_32"
      AC_CHECK_HEADERS([winsock2.h ws2tcpip.h],, AC_MSG_ERROR([[Winsock2 headers are required for W32]]))
      AC_CACHE_CHECK([for MS lib utility], [ac_cv_use_ms_lib_tool],
        [[mslibcheck=`lib 2>&1`
@@ -190,18 +174,67 @@ netbsd*)
      ;;
 *openedition*)
      AC_DEFINE_UNQUOTED(OS390,1,[This is a OS/390 system])
-     AM_CONDITIONAL(HAVE_GNU_LD, false)
     ;;
 *)
-     AC_MSG_RESULT(Unrecognised OS $host_os)
+     AC_MSG_WARN([Unrecognised OS $host_os])
      AC_DEFINE_UNQUOTED(OTHEROS,1,[Some strange OS])
 #    You might want to find out if your OS supports shutdown on listen sockets,
 #    and extend the switch statement; if we do not have 'HAVE_LISTEN_SHUTDOWN',
 #    pipes are used instead to signal 'select'.
 #    AC_DEFINE_UNQUOTED(HAVE_LISTEN_SHUTDOWN,1,[can use shutdown on listen sockets])
-     AM_CONDITIONAL(HAVE_GNU_LD, false)
 ;;
 esac
+
+if test "x$with_threads" = "xposix"; then
+# forced posix threads
+  if test "x$HAVE_POSIX_THREADS" = "xyes"; then
+    USE_THREADS='posix'
+  else
+    if test "x$HAVE_W32_THREADS" = "xyes"; then
+      AC_MSG_ERROR([[Posix threads are not available. Try to configure --with-threads=auto]])
+    else
+      AC_MSG_ERROR([[Posix threads are not available]])
+    fi
+  fi
+elif test "x$with_threads" = "xw32"; then
+# forced w32 threads
+  if test "x$HAVE_W32_THREADS" = "xyes"; then
+    USE_THREADS='w32'
+  else
+    if test "x$HAVE_POSIX_THREADS" = "xyes"; then
+      AC_MSG_ERROR([[W32 threads are not available. Try to configure --with-threads=auto]])
+    else
+      AC_MSG_ERROR([[W32 threads are not available]])
+    fi
+  fi
+else
+# automatic threads lib selection
+  if test "x$HAVE_POSIX_THREADS" = "xyes" && test "x$HAVE_W32_THREADS" = "xyes"; then
+    if test "x$os_is_native_w32" = "xyes"; then
+      USE_THREADS='w32'
+    else
+      USE_THREADS='posix'
+    fi
+  elif test "x$HAVE_POSIX_THREADS" = "xyes"; then
+    USE_THREADS='posix'
+  elif test "x$HAVE_W32_THREADS" = "xyes"; then
+    USE_THREADS='w32'
+  else
+    AC_MSG_ERROR([[No threading lib is available. Cosider installing pthreads]])
+  fi
+fi
+
+if test "x$USE_THREADS" = "xposix"; then
+  CC="$PTHREAD_CC"
+  AC_DEFINE([MHD_USE_POSIX_THREADS],[1],[define to use pthreads])
+  MHD_LIB_CFLAGS="$MHD_LIB_CFLAGS $PTHREAD_CFLAGS"
+  MHD_LIBDEPS="$PTHREAD_LIBS $MHD_LIBDEPS"
+elif test "x$USE_THREADS" = "xw32"; then
+  AC_DEFINE([MHD_USE_W32_THREADS],[1],[define to use W32 threads])
+fi
+AM_CONDITIONAL([USE_POSIX_THREADS], [test "x$USE_THREADS" = "xposix"])
+AM_CONDITIONAL([USE_W32_THREADS], [test "x$USE_THREADS" = "xw32"])
+
 
 AM_CONDITIONAL(HAVE_W32, [test "x$os_is_native_w32" = "xyes"])
 w32_shared_lib_exp=no
@@ -215,49 +248,150 @@ if test "x$enable_shared" = "xyes" && test "x$os_is_native_w32" = "xyes"; then
 fi
 AM_CONDITIONAL(W32_SHARED_LIB_EXP, [test "x$w32_shared_lib_exp" = "xyes"])
 AM_CONDITIONAL(USE_MS_LIB_TOOL, [test "x$ac_cv_use_ms_lib_tool" = "xyes"])
+
+# set GCC options
+# use '-fno-strict-aliasing', but only if the compiler
+# and linker can take it
+AX_CHECK_LINK_FLAG([-fno-strict-aliasing],
+  [AX_APPEND_COMPILE_FLAGS([-fno-strict-aliasing])])
+
+AC_C_BIGENDIAN
+
+AC_CHECK_PROG([HAVE_CURL_BINARY],[curl],[yes],[no])
+AM_CONDITIONAL([HAVE_CURL_BINARY],[test "x$HAVE_CURL_BINARY" = "xyes"])
+AC_CHECK_PROG([HAVE_MAKEINFO_BINARY],[makeinfo],[yes],[no])
+AM_CONDITIONAL([HAVE_MAKEINFO_BINARY],[test "x$HAVE_MAKEINFO_BINARY" = "xyes"])
 AM_CONDITIONAL(W32_STATIC_LIB, [test "x$os_is_native_w32" = "xyes"  && test "x$enable_static" = "xyes"])
 
 
-if test "$enable_epoll" = "yes"
-then
- AC_CHECK_HEADERS([sys/epoll.h],
-                   [enable_epoll="yes"],
-                   [enable_epoll="no"])
+AC_ARG_ENABLE([[doc]],
+  [AS_HELP_STRING([[--disable-doc]], [do not build any documentation])], ,
+    [enable_doc=yes])
+test "x$enable_doc" = "xno" || enable_doc=yes
+AM_CONDITIONAL([BUILD_DOC], [test "x$enable_doc" = "xyes"])
+
+AC_ARG_ENABLE([[examples]],
+  [AS_HELP_STRING([[--disable-examples]], [do not build any examples])], ,
+    [enable_examples=yes])
+test "x$enable_examples" = "xno" || enable_examples=yes
+AM_CONDITIONAL([BUILD_EXAMPLES], [test "x$enable_examples" = "xyes"])
+
+AC_ARG_ENABLE([[poll]],
+  [AS_HELP_STRING([[--enable-poll[=ARG]]], [enable poll support (yes, no, auto) [auto]])],
+    [enable_poll=${enableval}],
+    [enable_poll='auto']
+  )
+
+if test "$enable_poll" != "no"; then
+  if test "$os_is_native_w32" != "yes"; then
+    AC_CHECK_HEADERS([poll.h],
+      [
+        AC_CHECK_FUNCS([poll], [have_poll='yes'], [have_poll='no'])
+      ])
+  else
+    AC_MSG_CHECKING([for WSAPoll()])
+    AC_LINK_IFELSE([
+      AC_LANG_PROGRAM([[#include <winsock2.h>]], [[
+WSAPOLLFD fda[2];
+WSAPoll(fda, 2, 0);]])],
+        [
+          have_poll='yes'
+          AC_DEFINE([HAVE_POLL],[1])
+        ], [have_poll='no'])
+    AC_MSG_RESULT([$have_poll])
+  fi
+  if test "$enable_poll" = "yes" && test "$have_poll" != "yes"; then
+    AC_MSG_ERROR([[Support for poll was explicitly requested but cannot be enabled on this platform.]])
+  fi
+  enable_poll="$have_poll"
 fi
 
-if test "$enable_epoll" = "yes"
-then
- AC_DEFINE([EPOLL_SUPPORT],[1],[include epoll support])
-else
- AC_DEFINE([EPOLL_SUPPORT],[0],[disable epoll support])
+AC_ARG_ENABLE([[epoll]],
+  [AS_HELP_STRING([[--enable-epoll[=ARG]]], [enable epoll support (yes, no, auto) [auto]])],
+    [enable_epoll=${enableval}],
+    [enable_epoll='auto']
+  )
+
+if test "$enable_epoll" != "no"; then
+  AX_HAVE_EPOLL
+  if test "${ax_cv_have_epoll}" = "yes"; then
+    AC_DEFINE([EPOLL_SUPPORT],[1],[define to 1 to enable epoll support])
+    enable_epoll='yes'
+  else
+    AC_DEFINE([EPOLL_SUPPORT],[0],[define to 0 to disable epoll support])
+    if test "$enable_epoll" = "yes"; then
+      AC_MSG_ERROR([[Support for epoll was explicitly requested but cannot be enabled on this platform.]])
+    fi
+    enable_epoll='no'
+  fi
 fi
-AM_CONDITIONAL(ENABLE_EPOLL, [test "x$enable_epoll" != "xno"])
 
+if test "x$enable_epoll" = "xyes"; then
+  AC_CACHE_CHECK([for epoll_create1()], [mhd_cv_have_epoll_create1], [
+    AC_LINK_IFELSE([
+      AC_LANG_PROGRAM([[#include <sys/epoll.h>]], [[
+int fd;
+fd = epoll_create1(EPOLL_CLOEXEC);]])],
+      [mhd_cv_have_epoll_create1=yes],
+      [mhd_cv_have_epoll_create1=no])])
+  AS_IF([test "x$mhd_cv_have_epoll_create1" = "xyes"],[
+    AC_DEFINE([[HAVE_EPOLL_CREATE1]], [[1]], [Define if you have epoll_create1 function.])])
+fi
 
-CHECK_PTHREAD
-LIBS="$PTHREAD_LIBS $LIBS"
-AC_SUBST(PTHREAD_LIBS)
-AC_SUBST(PTHREAD_LDFLAGS)
-AC_SUBST(PTHREAD_CPPFLAGS)
+if test "x$HAVE_POSIX_THREADS" = "xyes"; then
+  # Check for pthread_setname_np()
+  SAVE_LIBS="$LIBS"
+  SAVE_CFLAGS="$CFLAGS"
+  LIBS="$PTHREAD_LIBS $LIBS"
+  CFLAGS="$CFLAGS $PTHREAD_CFLAGS"
+  AC_MSG_CHECKING([[for pthread_setname_np]])
+  AC_LINK_IFELSE(
+    [AC_LANG_PROGRAM([[#include <pthread.h>]], [[  pthread_setname_np(pthread_self(), "name")]])],
+    [AC_DEFINE([[HAVE_PTHREAD_SETNAME_NP]], [[1]], [Define if you have pthread_setname_np function.])
+     AC_MSG_RESULT([[yes]])],
+    [AC_MSG_RESULT([[no]])] )
+  LIBS="$SAVE_LIBS"
+  CFLAGS="$SAVE_CFLAGS"
+fi
 
 # Check for headers that are ALWAYS required
 AC_CHECK_HEADERS([fcntl.h math.h errno.h limits.h stdio.h locale.h sys/stat.h sys/types.h pthread.h],,AC_MSG_ERROR([Compiling libmicrohttpd requires standard UNIX headers files]))
 
 # Check for optional headers
-AC_CHECK_HEADERS([sys/types.h sys/time.h sys/msg.h netdb.h netinet/in.h netinet/tcp.h time.h sys/socket.h sys/mman.h arpa/inet.h sys/select.h poll.h gcrypt.h])
+AC_CHECK_HEADERS([sys/types.h sys/time.h sys/msg.h netdb.h netinet/in.h netinet/tcp.h time.h sys/socket.h sys/mman.h arpa/inet.h sys/select.h search.h])
+AM_CONDITIONAL([HAVE_TSEARCH], [test "x$ac_cv_header_search_h" = "xyes"])
 
-AC_CHECK_HEADERS([search.h], AM_CONDITIONAL(HAVE_TSEARCH, true), AM_CONDITIONAL(HAVE_TSEARCH, false))
+AC_CHECK_MEMBER([struct sockaddr_in.sin_len],
+   [ AC_DEFINE(HAVE_SOCKADDR_IN_SIN_LEN, 1, [Do we have sockaddr_in.sin_len?])
+   ],
+   [],
+   [
+    #ifdef HAVE_SYS_TYPES_H
+      #include <sys/types.h>
+    #endif
+    #ifdef HAVE_SYS_SOCKET_H
+      #include <sys/socket.h>
+    #endif
+    #ifdef HAVE_NETINET_IN_H
+      #include <netinet/in.h>
+    #endif
+   ])
+
 
 # Check for pipe/socketpair signaling
-AC_MSG_CHECKING([[whether to disable pipes signaling]])
-AC_ARG_ENABLE([[pipes]],
-	[AS_HELP_STRING([[--disable-pipes]], [[disable internal singalling by pipes and use socket pair instead]])],
-	[], [[enable_pipes=yes]])
-AS_IF([[test "x$os_is_windows" = "xyes"]], [disable_pipes=yes
-        AC_MSG_RESULT([[yes, forced on W32]])],
-	[[test "x$enable_pipes" != "xno"]], [disable_pipes=no
-        AC_MSG_RESULT([[$disable_pipes]])],
-        [AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+AC_MSG_CHECKING([[whether to enable signaling by socketpair]])
+
+AC_ARG_ENABLE([[socketpair]],
+	[AS_HELP_STRING([[--enable-socketpair[=ARG]]], [disable internal singalling by pipes and use socket pair instead (yes, no, try) [no]])], ,
+	[AS_IF([[test "x$os_is_windows" = "xyes"]], [enable_socketpair=yes], [enable_socketpair=no])]
+  )
+
+AS_IF(
+       [[test "x$enable_socketpair" != "xno"]],
+         [AS_IF([[test "x$os_is_windows" = "xyes"]],
+           [ AC_MSG_RESULT([[yes, forced on W32]]) ],
+           [ AC_LINK_IFELSE(
+             [ AC_LANG_PROGRAM([[
 				#ifdef HAVE_SYS_TYPES_H
 				#include <sys/types.h>
 				#endif
@@ -267,20 +401,26 @@ AS_IF([[test "x$os_is_windows" = "xyes"]], [disable_pipes=yes
 				]],[[
 				  int sv[2];
 				  if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0) return 1
-
-				]])],
-            [disable_pipes=yes
-              AC_MSG_RESULT([[yes, socketpair in available]])],
-            [disable_pipes=no
-              AC_MSG_RESULT([[no, socketpair in not available]])]
+				]])
+             ],
+             [ AC_MSG_RESULT([[yes, socketpair in available]]) ],
+             [ AC_MSG_RESULT([[no, socketpair in not available]])
+              AS_IF([[test "x$enable_socketpair" = "xyes"]], [ AC_MSG_ERROR([[socketpair signalling cannot be enabled.]]) ])
+             ]
+             )
+           ]
           )
-       ])
-if test "x$disable_pipes" = "xyes"; then
+         ],
+       [
+        AC_MSG_RESULT([[no]])
+        AS_IF([[test "x$os_is_windows" = "xyes"]], [ AC_MSG_ERROR([[socketpair must be enabled on W32]]) ])
+       ]
+     )
+if test "x$enable_socketpair" = "xyes"; then
 	AC_DEFINE([[MHD_DONT_USE_PIPES]], [[1]], [Define to use pair of sockets instead of pipes for signaling])
 fi
 
-AC_CHECK_FUNCS_ONCE(memmem)
-AC_CHECK_FUNCS_ONCE(accept4)
+AC_CHECK_FUNCS_ONCE([memmem accept4])
 AC_MSG_CHECKING([[for gmtime_s]])
 AC_LINK_IFELSE(
   [AC_LANG_PROGRAM(
@@ -294,8 +434,7 @@ AC_LINK_IFELSE(
   ])
 
 
-AC_COMPILE_IFELSE(
-  [AC_LANG_PROGRAM(
+AC_CHECK_DECLS([SOCK_NONBLOCK], [AC_DEFINE([HAVE_SOCK_NONBLOCK], [1], [SOCK_NONBLOCK is defined in a socket header])], [],
                    [
                     #if defined HAVE_SYS_TYPES_H
                     #  include <sys/types.h>
@@ -304,16 +443,8 @@ AC_COMPILE_IFELSE(
                     #  include <sys/socket.h>
                     #elif defined HAVE_WINSOCK2_H
                     #  include <winsock2.h>
-                    #endif],
-                   [
-                    #ifndef SOCK_NONBLOCK
-                    # error do not have SOCK_NONBLOCK
                     #endif
                    ])
-  ],
-  [
-    AC_DEFINE([HAVE_SOCK_NONBLOCK], [1], [SOCK_NONBLOCK is defined in a socket header])
-  ])
 
 
 AC_SEARCH_LIBS([clock_gettime], [rt], [
@@ -322,7 +453,7 @@ AC_SEARCH_LIBS([clock_gettime], [rt], [
 
 # IPv6
 AC_MSG_CHECKING(for IPv6)
-AC_TRY_COMPILE([
+AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
 #include <stdio.h>
 #if HAVE_NETINET_IN_H
 #include <netinet/in.h>
@@ -336,24 +467,21 @@ AC_TRY_COMPILE([
 #if HAVE_WS2TCPIP_H
 #include <ws2tcpip.h>
 #endif
-],[
+]], [[
 int af=AF_INET6;
 int pf=PF_INET6;
 struct sockaddr_in6 sa;
 printf("%d %d %p\n", af, pf, &sa);
-],[
+]])],[
 have_inet6=yes;
 AC_DEFINE([HAVE_INET6], [1], [Provides IPv6 headers])
-],
+],[
 have_inet6=no
-)
+])
 AC_MSG_RESULT($have_inet6)
 
-# TCP_CORK
-AC_CHECK_DECLS([TCP_CORK], [], [], [[#include <netinet/tcp.h>]])
-
-# TCP_NOPUSH
-AC_CHECK_DECLS([TCP_NOPUSH], [], [], [[#include <netinet/tcp.h>]])
+# TCP_CORK and TCP_NOPUSH
+AC_CHECK_DECLS([TCP_CORK, TCP_NOPUSH], [], [], [[#include <netinet/tcp.h>]])
 
 HIDDEN_VISIBILITY_CFLAGS=""
 case "$host" in
@@ -365,81 +493,92 @@ case "$host" in
     ;;
   *)
     dnl on other compilers, check if we can do -fvisibility=hidden
-    SAVED_CFLAGS="${CFLAGS}"
-    CFLAGS="-fvisibility=hidden"
-    AC_MSG_CHECKING([for -fvisibility=hidden compiler flag])
-    AC_TRY_COMPILE([], [int main (void) { return 0; }],
-                   AC_MSG_RESULT(yes)
-                   enable_fvisibility_hidden=yes,
-                   AC_MSG_RESULT(no)
-                   enable_fvisibility_hidden=no)
-    CFLAGS="${SAVED_CFLAGS}"
-
-    AS_IF([test "${enable_fvisibility_hidden}" = "yes"], [
-      AC_DEFINE([_MHD_EXTERN], [__attribute__((visibility("default"))) extern],
-                [defines how to decorate public symbols while building])
-      HIDDEN_VISIBILITY_CFLAGS="-fvisibility=hidden"
-    ])
+    AX_CHECK_LINK_FLAG([-fvisibility=hidden],
+      [AX_CHECK_COMPILE_FLAG([-fvisibility=hidden],
+                           [AC_DEFINE([_MHD_EXTERN], [__attribute__((visibility("default"))) extern],
+                                       [defines how to decorate public symbols while building])
+                            HIDDEN_VISIBILITY_CFLAGS="-fvisibility=hidden"])])
     ;;
 esac
 AC_SUBST(HIDDEN_VISIBILITY_CFLAGS)
 
 # libcurl (required for testing)
-SAVE_LIBS=$LIBS
-
-AC_MSG_CHECKING(whether to use libcurl for testing)
 AC_ARG_ENABLE([curl],
   [AS_HELP_STRING([--disable-curl],[disable cURL based testcases])],
-  [enable_curl=${enableval}],
-  [enable_curl=yes])
-AC_MSG_RESULT($enable_curl)
+  [enable_curl=${enableval}])
 curl=0
-if test "$enable_curl" = "yes"
+if test "$enable_curl" != "no"
 then
-  LIBCURL_CHECK_CONFIG(,,curl=1,curl=0)
-  AC_CHECK_HEADERS([curl/curl.h],[
-# Lib cURL & cURL - OpenSSL versions
-   MHD_REQ_CURL_VERSION=7.16.4
-   MHD_REQ_CURL_OPENSSL_VERSION=0.9.8
-   MHD_REQ_CURL_GNUTLS_VERSION=2.8.6
-   MHD_REQ_CURL_NSS_VERSION=3.12.0
-   AC_DEFINE_UNQUOTED([MHD_REQ_CURL_VERSION], "$MHD_REQ_CURL_VERSION", [required cURL version to run tests])
-   AC_DEFINE_UNQUOTED([MHD_REQ_CURL_OPENSSL_VERSION], "$MHD_REQ_CURL_OPENSSL_VERSION", [required cURL SSL version to run tests])
-   AC_DEFINE_UNQUOTED([MHD_REQ_CURL_GNUTLS_VERSION], "$MHD_REQ_CURL_GNUTLS_VERSION", [gnuTLS lib version - used in conjunction with cURL])
-   AC_DEFINE_UNQUOTED([MHD_REQ_CURL_NSS_VERSION], "$MHD_REQ_CURL_NSS_VERSION", [NSS lib version - used in conjunction with cURL])
- ],[curl=0])
+  LIBCURL_CHECK_CONFIG([yes],[7.16.4],[enable_curl=yes],
+    [
+      if test "x$enable_curl" = "xyes"; then
+        AC_MSG_WARN([[cURL-based tests cannot be enabled because libcurl is missing]])
+      fi
+      enable_curl=no
+    ])
 fi
+if test "$enable_curl" != "no"
+then
+# Lib cURL & cURL - OpenSSL versions
+  AC_DEFINE([MHD_REQ_CURL_VERSION], ["7.16.4"], [required cURL version to run tests])
+  AC_DEFINE([MHD_REQ_CURL_OPENSSL_VERSION], ["0.9.8"], [required cURL SSL version to run tests])
+  AC_DEFINE([MHD_REQ_CURL_GNUTLS_VERSION], ["2.8.6"], [gnuTLS lib version - used in conjunction with cURL])
+  AC_DEFINE([MHD_REQ_CURL_NSS_VERSION], ["3.12.0"], [NSS lib version - used in conjunction with cURL])
+fi
+AM_CONDITIONAL([HAVE_CURL], [test "x$enable_curl" = "xyes"])
 
-AC_MSG_CHECKING(for magic_open -lmagic)
-AC_CHECK_LIB(magic, magic_open,
+AC_CHECK_LIB([[magic]], [[magic_open]],
   [AC_CHECK_HEADERS([magic.h],
    AM_CONDITIONAL(HAVE_MAGIC, true),
    AM_CONDITIONAL(HAVE_MAGIC, false))],
   AM_CONDITIONAL(HAVE_MAGIC, false))
 
 
-# optional: libmicrospdy support. Enabled by default
-AC_MSG_CHECKING(whether to support libmicrospdy)
+# optional: libmicrospdy support. Enabled by default if not on W32
 AC_ARG_ENABLE([spdy],
-		AS_HELP_STRING([--disable-spdy],
-			[disable libmicrospdy]),
+		AS_HELP_STRING([--enable-spdy],
+			[enable build libmicrospdy (yes, no, auto) [auto]]),
 		[enable_spdy=${enableval}],
-		[enable_spdy=yes])
-AC_MSG_RESULT($enable_spdy)
+		[ AS_IF([[test "x$os_is_windows" = "xyes"]], [enable_spdy=no]) ])
 
-if test "$enable_spdy" = "yes"
+if test "$enable_spdy" != "no"
 then
- AC_CHECK_HEADERS([openssl/err.h],
-                   AC_CHECK_LIB(ssl, SSL_CTX_set_next_protos_advertised_cb,
-                    [AM_CONDITIONAL(HAVE_OPENSSL, true)
-                     enable_spdy="yes"],
-                    [AM_CONDITIONAL(HAVE_OPENSSL, false)
-                    enable_spdy="no"]),
-                   [AM_CONDITIONAL(HAVE_OPENSSL, false)
-                   enable_spdy="no"])
+  AX_CHECK_OPENSSL([ have_openssl=yes ],[ have_openssl=no ])
+  if test "x$have_openssl" = "xyes"
+  then
+    # check OpenSSL headers
+    SAVE_CPP_FLAGS="$CPPFLAGS"
+    CPPFLAGS="$OPENSSL_INCLUDES $CPPFLAGS"
+    AC_CHECK_HEADERS([openssl/evp.h openssl/rsa.h openssl/rand.h openssl/err.h openssl/sha.h openssl/pem.h openssl/engine.h], [ have_openssl=yes ],[ have_openssl=no ])
+    if test "x$have_openssl" = "xyes"
+    then
+      # check OpenSSL libs
+      SAVE_LIBS="$LIBS"
+      SAVE_LD_FLAGS="$LDFLAGS"
+      LDFLAGS="$LDFLAGS $OPENSSL_LDFLAGS"
+      LIBS="$OPENSSL_LIBS $LIBS"
+      AC_CHECK_FUNC([SSL_CTX_set_next_protos_advertised_cb],
+        [
+          AC_CHECK_FUNC([SSL_library_init], [ have_openssl=yes ],[ have_openssl=no ])
+        ],[ have_openssl=no ])
+      LIBS="$SAVE_LIBS"
+      LDFLAGS="$SAVE_LD_FLAGS"
+    fi
+    CPPFLAGS="$SAVE_CPP_FLAGS"
+  fi
+  if test "x$have_openssl" = "xyes"
+  then
+    enable_spdy=yes
+  else
+    AS_IF([[test "x$enable_spdy" = "xyes" ]], [AC_MSG_ERROR([[libmicrospdy cannot be enabled without OpenSSL.]])])
+    have_openssl=no
+    enable_spdy=no
+  fi
 else
- AM_CONDITIONAL(HAVE_OPENSSL, false)
+  # OpenSSL is used only for libmicrospdy
+  have_openssl=no
 fi
+AM_CONDITIONAL([HAVE_OPENSSL], [test "x$have_openssl" = "xyes"])
 
 if test "$enable_spdy" = "yes"
 then
@@ -451,30 +590,20 @@ AM_CONDITIONAL(ENABLE_SPDY, [test "x$enable_spdy" != "xno"])
 AC_MSG_CHECKING(whether we have OpenSSL and thus can support libmicrospdy)
 AC_MSG_RESULT($enable_spdy)
 
-spdy_OPENSSL
 # for pkg-config
-SPDY_LIBDEPS=""
+SPDY_LIBDEPS="$OPENSSL_LIBS"
 
-
-AC_CHECK_HEADERS([spdylay/spdylay.h],
-                 [AM_CONDITIONAL(HAVE_SPDYLAY, true)
-		 have_spdylay="yes"],
-                 [AM_CONDITIONAL(HAVE_SPDYLAY, false)
-                 have_spdylay="no"])
-
+SPDY_LIB_LDFLAGS="$LDFLAGS $OPENSSL_LDFLAGS"
+SPDY_LIB_CFLAGS="$CFLAGS"
+SPDY_LIB_CPPFLAGS="$OPENSSL_INCLUDES $CPPFLAGS"
 AC_SUBST(SPDY_LIB_LDFLAGS)
+AC_SUBST(SPDY_LIB_CFLAGS)
+AC_SUBST(SPDY_LIB_CPPFLAGS)
 # for pkg-config
 AC_SUBST(SPDY_LIBDEPS)
 
-AM_CONDITIONAL(ENABLE_MINITASN1,  [test -n " " ] )
-AM_CONDITIONAL(ENABLE_OPENSSL,  [test -n "" ] )
-AM_CONDITIONAL(HAVE_LD_OUTPUT_DEF,  [test -n "" ] )
-AM_CONDITIONAL(HAVE_LD_VERSION_SCRIPT,  [test -n "" ] )
-
-
-
-LIBS=$SAVE_LIBS
-AM_CONDITIONAL(HAVE_CURL, test x$curl = x1)
+AC_CHECK_HEADERS([spdylay/spdylay.h], [ have_spdylay="yes" ], [have_spdylay="no"])
+AM_CONDITIONAL(HAVE_SPDYLAY, [test "x$have_spdylay" = "xyes"])
 
 # large file support (> 4 GB)
 AC_SYS_LARGEFILE
@@ -503,82 +632,182 @@ AC_ARG_ENABLE([postprocessor],
                [disable MHD PostProcessor functionality])],
    [enable_postprocessor=${enableval}],
    [enable_postprocessor=yes])
-AC_MSG_RESULT($disable_postprocessor)
-AM_CONDITIONAL([HAVE_POSTPROCESSOR],test x$enable_postprocessor != xno)
+test "x$enable_postprocessor" = "xno" || enable_postprocessor=yes
+AC_MSG_RESULT([[$enable_postprocessor]])
+AM_CONDITIONAL([HAVE_POSTPROCESSOR],test "x$enable_postprocessor" != "xno")
+if test "x$enable_postprocessor" != "xno"
+then
+ AC_DEFINE([HAVE_POSTPROCESSOR],[1],[define to 1 if MHD was build with postprocessor.c])
+fi
 
 
 # optional: have zzuf, socat?
-AC_CHECK_PROG([HAVE_ZZUF],[zzuf], 1, 0)
-AC_CHECK_PROG([HAVE_SOCAT],[socat], 1, 0)
-AM_CONDITIONAL(HAVE_ZZUF, test 0 != $HAVE_ZZUF)
-AM_CONDITIONAL(HAVE_SOCAT, test 0 != $HAVE_SOCAT)
+AC_CHECK_PROG([have_zzuf],[zzuf], [yes], [no])
+AC_CHECK_PROG([have_socat],[socat], [yes], [no])
+AM_CONDITIONAL([HAVE_ZZUF], [test "x$have_zzuf" = "xyes"])
+AM_CONDITIONAL([HAVE_SOCAT], [test "x$have_socat" = "xyes"])
 
 
 # libgcrypt linkage: required for HTTPS support
-AM_PATH_LIBGCRYPT(1.2.2, gcrypt=true)
-
-# define the minimal version of libgcrypt required
-MHD_GCRYPT_VERSION=1:1.2.2
-AC_DEFINE_UNQUOTED([MHD_GCRYPT_VERSION], "$MHD_GCRYPT_VERSION", [gcrypt lib version])
-
+AM_PATH_LIBGCRYPT([1.2.2], [have_gcrypt=yes], [have_gcrypt=no])
+if test "x$have_gcrypt" = "xyes"
+then
+  SAVE_CFLAGS="$CFLAGS"
+  CFLAGS="$CFLAGS $LIBGCRYPT_CFLAGS"
+  # LIBGCRYPT_CFLAGS can be actually a CPPFLAGS, so check them both
+  SAVE_CPPFLAGS="$CPPFLAGS"
+  CPPFLAGS="$CPPFLAGS $LIBGCRYPT_CFLAGS"
+  AC_CHECK_HEADERS([gcrypt.h], [], [have_gcrypt=no])
+  CFLAGS="$SAVE_CFLAGS"
+  CPPFLAGS="$SAVE_CPPFLAGS"
+fi
 
 # gnutls
-gnutls=0
-AC_MSG_CHECKING(for gnutls)
-AC_ARG_WITH(gnutls,
-   [  --with-gnutls=PFX   base of gnutls installation],
-   [AC_MSG_RESULT([$with_gnutls])
+GNUTLS_CPPFLAGS=""
+GNUTLS_LDFLAGS=""
+have_gnutls=no
+have_gnutls_sni=no
+have_gnutls_pkgcfg=no
+AC_MSG_CHECKING([[how to find GnuTLS library]])
+AC_ARG_WITH([[gnutls]],
+   [AC_HELP_STRING([[--with-gnutls[=PFX]]],[use GnuTLS for HTTPS support, optional PFX overrides pkg-config data for GnuTLS headers (PFX/include) and libs (PFX/lib)])],
+   [
     case $with_gnutls in
       no)
+        AC_MSG_RESULT([[GnuTLS disabled]])
         ;;
       yes)
-        AC_CHECK_HEADERS([gnutls/gnutls.h],
-            AC_CHECK_LIB([gnutls], [gnutls_priority_set],
-	     gnutls=true))
+        AC_MSG_RESULT([[automatically, forced]])
         ;;
       *)
+        AC_MSG_RESULT([[-I$with_gnutls/include -L$with_gnutls/lib -lgnutls]])
+        SAVE_LDFLAGS="$LDFLAGS"
+        SAVE_CPPFLAGS="$CPPFLAGS"
         LDFLAGS="-L$with_gnutls/lib $LDFLAGS"
         CPPFLAGS="-I$with_gnutls/include $CPPFLAGS"
-        AC_CHECK_HEADERS([gnutls/gnutls.h],
-            AC_CHECK_LIB([gnutls], [gnutls_priority_set],
-              EXT_LIB_PATH="-L$with_gnutls/lib $EXT_LIB_PATH"
-              gnutls=true))
+        have_gnutls_pkgcfg=no
+          AC_CHECK_HEADERS([gnutls/gnutls.h],
+            [AC_CHECK_LIB([gnutls], [gnutls_priority_set],
+              [
+                GNUTLS_CPPFLAGS="-I$with_gnutls/include"
+                GNUTLS_LDFLAGS="-L$with_gnutls/lib"
+                GNUTLS_LIBS="-lgnutls"
+                AC_CHECK_LIB([gnutls], [gnutls_load_file], [AC_CHECK_LIB([gnutls], [gnutls_privkey_import_x509_raw], [have_gnutls_sni=yes])])
+                have_gnutls=yes
+              ])])
+        AS_IF([test "x$have_gnutls" != "xyes"], [AC_MSG_ERROR([can't find usable libgnutls at specified prefix $with_gnutls])])
+        LDFLAGS="$SAVE_LDFLAGS"
+        CPPFLAGS="$SAVE_CPPFLAGS"
         ;;
     esac
    ],
-   [AC_MSG_RESULT([--with-gnutls not specified])
-    AC_CHECK_HEADERS([gnutls/gnutls.h],
-        AC_CHECK_LIB([gnutls], [gnutls_priority_set],
-          gnutls=true))])
-AM_CONDITIONAL(HAVE_GNUTLS, test x$gnutls = xtrue)
-AC_DEFINE_UNQUOTED([HAVE_GNUTLS], $gnutls, [We have gnutls])
+   [AC_MSG_RESULT([[automatically]])
+   ])
 
+AS_IF([test "x$with_gnutls" != "xno" && test "x$have_gnutls" != "xyes"],
+  [
+    PKG_CHECK_MODULES(GNUTLS, [[gnutls]],
+      [
+       have_gnutls_pkgcfg='yes'
+       SAVE_CPPFLAGS="$CPPFLAGS"
+       SAVE_CFLAGS="$CFLAGS"
+       SAVE_LDFLAGS="$LDFLAGS"
+       SAVE_LIBS="$LIBS"
+       CPPFLAGS="$GNUTLS_CFLAGS $CPPFLAGS"
+       CFLAGS="$GNUTLS_CFLAGS $CFLAGS"
+       LDFLAGS="$GNUTLS_LIBS $LDFLAGS"
+       LIBS="$LIBS $GNUTLS_LIBS"
+       AC_MSG_CHECKING([[whether GnuTLS is usable]])
+       AC_LINK_IFELSE([
+         AC_LANG_PROGRAM([[#include <gnutls/gnutls.h>]], [[
+                gnutls_session_t session;
+                gnutls_priority_t priorities;
+                gnutls_global_init();
+                gnutls_priority_init(&priorities, "NORMAL", NULL);
+                gnutls_init(&session, GNUTLS_SERVER);
+                gnutls_priority_set(session, priorities);
+          ]])],
+          [
+           AC_MSG_RESULT([[yes]])
+           have_gnutls=yes
+           GNUTLS_CPPLAGS="$GNUTLS_CFLAGS"
+           GNUTLS_LDFLAGS="$GNUTLS_LIBS"
+           AC_MSG_CHECKING([[for gnutls_privkey_import_x509_raw()]])
+           AC_LINK_IFELSE([
+             AC_LANG_PROGRAM([[#include <gnutls/gnutls.h>]], [[
+                    gnutls_datum_t data;
+                    gnutls_privkey_t key;
+                    gnutls_load_file("key.pem", &data);
+                    gnutls_privkey_import_x509_raw(key, &data, GNUTLS_X509_FMT_PEM, NULL, 0);
+                    gnutls_free(data.data);
+                  ]])], [[have_gnutls_sni=yes]], [[have_gnutls_sni=no]])
+           AC_MSG_RESULT([[$have_gnutls_sni]])
+          ],
+          [
+           AC_MSG_RESULT([[no]])
+           have_gnutls=no
+          ])
 
+       AS_IF([test "x$have_gnutls" != "xyes"], [AC_MSG_WARN([pkg-config reports that GnuTLS is present, but GnuTLS can't be used])])
+       CPPFLAGS="$SAVE_CPPFLAGS"
+       CFLAGS="$SAVE_CFLAGS"
+       LDFLAGS="$SAVE_LDFLAGS"
+       LIBS="$SAVE_LIBS"
+      ],
+      [
+       have_gnutls_pkgcfg='no'
+       AC_CHECK_HEADERS([gnutls/gnutls.h],
+        [AC_CHECK_LIB([gnutls], [gnutls_priority_set],
+          [
+            GNUTLS_LIBS="-lgnutls"
+            AC_CHECK_LIB([gnutls], [gnutls_load_file], [AC_CHECK_LIB([gnutls], [gnutls_privkey_import_x509_raw], [have_gnutls_sni=yes])])
+            have_gnutls=yes
+          ])])
+      ])
+  ])
+
+AS_IF([test "x$have_gnutls" != "xyes" && test "x$with_gnutls" = "xyes"], [AC_MSG_ERROR([[can't find usable libgnutls]])])
+
+AM_CONDITIONAL(HAVE_GNUTLS, test "x$have_gnutls" = "xyes")
+AM_CONDITIONAL([HAVE_GNUTLS_SNI], [test "x$have_gnutls_sni" = "xyes"])
+
+AC_SUBST([GNUTLS_CPPFLAGS])
+AC_SUBST([GNUTLS_CFLAGS])
+AC_SUBST([GNUTLS_LDFLAGS])
+AC_SUBST([GNUTLS_LIBS])
 
 # optional: HTTPS support.  Enabled by default
 AC_MSG_CHECKING(whether to support HTTPS)
 AC_ARG_ENABLE([https],
-   [AS_HELP_STRING([--disable-https],
-               [disable HTTPS support])],
-   [enable_https=${enableval}],
-   [enable_https=yes])
-if test "$enable_https" = "yes"
+   [AS_HELP_STRING([--enable-https],
+               [enable HTTPS support (yes, no, auto)[auto]])],
+   [enable_https=${enableval}])
+if test "x$enable_https" != "xno"
 then
- if test "$gcrypt" = "true" -a "$gnutls" = "true"
- then
-   AC_DEFINE([HTTPS_SUPPORT],[1],[include HTTPS support])
-   MHD_LIBDEPS="$LIBGCRYPT_LIBS"
- else
-   AC_DEFINE([HTTPS_SUPPORT],[0],[no libgcrypt or libgnutls])
-   enable_https="no (lacking libgcrypt or libgnutls)"
- fi
+  AS_IF([test "x$have_gnutls" = "xyes" && test "x$have_gcrypt" = "xyes"], [
+          AC_DEFINE([HTTPS_SUPPORT],[1],[include HTTPS support])
+          MHD_LIB_CPPFLAGS="$MHD_LIB_CPPFLAGS $LIBGCRYPT_CFLAGS $GNUTLS_CPPFLAGS"
+          MHD_LIB_CFLAGS="$MHD_LIB_CFLAGS $LIBGCRYPT_CFLAGS $GNUTLS_CFLAGS"
+          MHD_LIB_LDFLAGS="$MHD_LIB_LDFLAGS $GNUTLS_LDFLAGS"
+          MHD_LIBDEPS="$GNUTLS_LIBS $LIBGCRYPT_LIBS $MHD_LIBDEPS"
+          enable_https=yes
+          MSG_HTTPS="yes (using libgnutls and libgcrypt)"
+        ], [
+          AS_IF([test "x$have_gnutls" = "xyes"], [crypt_missing="libgrypt"],
+                [test "x$have_gcrypt" = "xyes"], [crypt_missing="libgnutls"],
+                                                 [crypt_missing="libgrypt and libgnutls"])
+          AS_IF([[test "x$enable_https" = "xyes" ]], [AC_MSG_ERROR([[HTTPS support cannot be enabled without $crypt_missing.]])])
+          AC_DEFINE([HTTPS_SUPPORT],[0],[no libgcrypt or libgnutls])
+          enable_https=no
+          MSG_HTTPS="no (lacking $crypt_missing)"
+        ])
 else
   AC_DEFINE([HTTPS_SUPPORT],[0],[disable HTTPS support])
-  enable_https="no (disabled)"
+  MSG_HTTPS="no (disabled)"
 fi
-AC_MSG_RESULT($enable_https)
+AC_MSG_RESULT([$MSG_HTTPS])
 
-AM_CONDITIONAL(ENABLE_HTTPS, test "$enable_https" = "yes")
+AM_CONDITIONAL([ENABLE_HTTPS], [test "x$enable_https" = "xyes"])
 
 # optional: HTTP Basic Auth support. Enabled by default
 AC_MSG_CHECKING(whether to support HTTP basic authentication)
@@ -587,8 +816,9 @@ AC_ARG_ENABLE([bauth],
 			[disable HTTP basic Auth support]),
 		[enable_bauth=${enableval}],
 		[enable_bauth=yes])
-if test "$enable_bauth" = "yes"
+if test "x$enable_bauth" != "xno"
 then
+ enable_bauth=yes
  AC_DEFINE([BAUTH_SUPPORT],[1],[include basic Auth support])
 else
  AC_DEFINE([BAUTH_SUPPORT],[0],[disable basic Auth support])
@@ -603,8 +833,9 @@ AC_ARG_ENABLE([dauth],
 			[disable HTTP basic and digest Auth support]),
 		[enable_dauth=${enableval}],
 		[enable_dauth=yes])
-if test "$enable_dauth" = "yes"
+if test "x$enable_dauth" != "xno"
 then
+ enable_dauth=yes
  AC_DEFINE([DAUTH_SUPPORT],[1],[include digest Auth support])
 else
  AC_DEFINE([DAUTH_SUPPORT],[0],[disable digest Auth support])
@@ -614,7 +845,7 @@ AM_CONDITIONAL(ENABLE_DAUTH, [test "x$enable_dauth" != "xno"])
 
 
 
-MHD_LIB_LDFLAGS="-export-dynamic -no-undefined"
+MHD_LIB_LDFLAGS="$MHD_LIB_LDFLAGS -export-dynamic -no-undefined"
 
 # gcov compilation
 AC_MSG_CHECKING(whether to compile with support for code coverage analysis)
@@ -626,20 +857,35 @@ AC_ARG_ENABLE([coverage],
 AC_MSG_RESULT($use_gcov)
 AM_CONDITIONAL([USE_COVERAGE], [test "x$use_gcov" = "xyes"])
 
+AX_COUNT_CPUS
+AC_SUBST([CPU_COUNT])
 
+AC_SUBST(MHD_LIB_CPPFLAGS)
+AC_SUBST(MHD_LIB_CFLAGS)
 AC_SUBST(MHD_LIB_LDFLAGS)
 
 # for pkg-config
+AS_IF([[test "x$enable_https" = "xyes" && test "x$have_gnutls_pkgcfg" = "xyes" ]],
+ [ # remove GnuTLS from private libs in .pc file as it defined in Requires.private
+   MHD_REQ_PRIVATE='gnutls'
+   MHD_LIBDEPS_PKGCFG="${MHD_LIBDEPS//$GNUTLS_LIBS/}"
+ ],
+ [
+   MHD_REQ_PRIVATE=''
+   MHD_LIBDEPS_PKGCFG="$MHD_LIBDEPS"
+ ])
+AC_SUBST([MHD_REQ_PRIVATE])
+AC_SUBST([MHD_LIBDEPS_PKGCFG])
 AC_SUBST(MHD_LIBDEPS)
 
 AC_SUBST(CPPFLAGS)
 AC_SUBST(LIBS)
 AC_SUBST(LDFLAGS)
-AC_SUBST(EXT_LIB_PATH)
-AC_SUBST(EXT_LIBS)
 
 AC_CONFIG_FILES([
 libmicrohttpd.pc
+libmicrospdy.pc
+w32/VS2013/microhttpd_dll_res_vc.rc
 Makefile
 contrib/Makefile
 doc/Makefile
@@ -659,36 +905,27 @@ src/testspdy/Makefile
 src/testzzuf/Makefile])
 AC_OUTPUT
 
-AM_CONDITIONAL(ENABLE_MINITASN1,  [test -n " " ] )
-AM_CONDITIONAL(ENABLE_OPENSSL,  [test -n "" ] )
-AM_CONDITIONAL(HAVE_LD_OUTPUT_DEF,  [test -n "" ] )
-AM_CONDITIONAL(HAVE_LD_VERSION_SCRIPT,  [test -n "" ] )
-
 # Finally: summary
-if test "$curl" != 1 ; then
+if test "x$enable_curl" != "xyes"; then
  MSG_CURL="no, many unit tests will not run"
 else
  MSG_CURL="yes"
 fi
 
-if test "$gcrypt" != true
-then
- MSG_GCRYPT="no, HTTPS will not be built"
-else
- MSG_GCRYPT="yes"
-fi
-
 AC_MSG_NOTICE([Configuration Summary:
   Operating System:  ${host_os}
-  libgcrypt:         ${MSG_GCRYPT}
+  Threading lib:     ${USE_THREADS}
   libcurl (testing): ${MSG_CURL}
   Target directory:  ${prefix}
   Messages:          ${enable_messages}
   Basic auth.:       ${enable_bauth}
   Digest auth.:      ${enable_dauth}
   Postproc:          ${enable_postprocessor}
-  HTTPS support:     ${enable_https}
-  epoll support:     ${enable_epoll}
+  HTTPS support:     ${MSG_HTTPS}
+  poll support:      ${enable_poll=no}
+  epoll support:     ${enable_epoll=no}
+  build docs:        ${enable_doc}
+  build examples:    ${enable_examples}
   libmicrospdy:      ${enable_spdy}
   spdylay (testing): ${have_spdylay}
 ])
@@ -702,4 +939,11 @@ else
  AC_MSG_NOTICE([
   License         :  LGPL or eCos
 ])
+fi
+
+if test "x$enable_bauth" != "xyes" -o \
+        "x$enable_dauth" != "xyes" -o \
+        "x$enable_postprocessor" != "xyes"
+then
+ AC_MSG_NOTICE([WARNING: This will be a custom build with missing symbols. Do NOT use this build in a distribution. Building with these kinds of configure options is only for custom builds for embedded systems.])
 fi

@@ -1,6 +1,6 @@
 /*
   This file is part of libmicrohttpd
-  (C) 2007-2013 Daniel Pittman and Christian Grothoff
+  Copyright (C) 2007-2015 Daniel Pittman and Christian Grothoff
 
   This library is free software; you can redistribute it and/or
   modify it under the terms of the GNU Lesser General Public
@@ -75,20 +75,28 @@ extern MHD_PanicCallback mhd_panic;
  */
 extern void *mhd_panic_cls;
 
+/* If we have Clang or gcc >= 4.5, use __buildin_unreachable() */
+#if defined(__clang__) || (__GNUC__ > 4) || (__GNUC__ == 4 && __GNUC_MINOR__ >= 5)
+#define BUILTIN_NOT_REACHED __builtin_unreachable()
+#else
+#define BUILTIN_NOT_REACHED
+#endif
+
+
 #if HAVE_MESSAGES
 /**
  * Trigger 'panic' action based on fatal errors.
  *
  * @param msg error message (const char *)
  */
-#define MHD_PANIC(msg) mhd_panic (mhd_panic_cls, __FILE__, __LINE__, msg)
+#define MHD_PANIC(msg) do { mhd_panic (mhd_panic_cls, __FILE__, __LINE__, msg); BUILTIN_NOT_REACHED; } while (0)
 #else
 /**
  * Trigger 'panic' action based on fatal errors.
  *
  * @param msg error message (const char *)
  */
-#define MHD_PANIC(msg) mhd_panic (mhd_panic_cls, __FILE__, __LINE__, NULL)
+#define MHD_PANIC(msg) do { mhd_panic (mhd_panic_cls, __FILE__, __LINE__, NULL); BUILTIN_NOT_REACHED; } while (0)
 #endif
 
 
@@ -199,22 +207,6 @@ MHD_DLOG (const struct MHD_Daemon *daemon,
 	  const char *format, ...);
 #endif
 
-/**
- * Process escape sequences ('+'=space, %HH) Updates val in place; the
- * result should be UTF-8 encoded and cannot be larger than the input.
- * The result must also still be 0-terminated.
- *
- * @param cls closure (use NULL)
- * @param connection handle to connection, not used
- * @param val value to unescape (modified in the process)
- * @return length of the resulting val (strlen(val) maybe
- *  shorter afterwards due to elimination of escape sequences)
- */
-size_t
-MHD_http_unescape (void *cls,
-		   struct MHD_Connection *connection,
-		   char *val);
-
 
 /**
  * Header or cookie in HTTP request or response.
@@ -266,8 +258,8 @@ struct MHD_Response
   char *data;
 
   /**
-   * Closure to give to the content reader
-   * free callback.
+   * Closure to give to the content reader @e crc
+   * and content reader free callback @e crfc.
    */
   void *crc_cls;
 
@@ -284,34 +276,35 @@ struct MHD_Response
   MHD_ContentReaderFreeCallback crfc;
 
   /**
-   * Mutex to synchronize access to data/size and
-   * reference counts.
+   * Mutex to synchronize access to @e data, @e size and
+   * @e reference_count.
    */
-  pthread_mutex_t mutex;
+  MHD_mutex_ mutex;
 
   /**
-   * Set to MHD_SIZE_UNKNOWN if size is not known.
+   * Set to #MHD_SIZE_UNKNOWN if size is not known.
    */
   uint64_t total_size;
 
   /**
    * At what offset in the stream is the
-   * beginning of data located?
+   * beginning of @e data located?
    */
   uint64_t data_start;
 
   /**
-   * Offset to start reading from when using 'fd'.
+   * Offset to start reading from when using @e fd.
    */
   off_t fd_off;
 
   /**
-   * Size of data.
+   * Number of bytes ready in @e data (buffer may be larger
+   * than what is filled with payload).
    */
   size_t data_size;
 
   /**
-   * Size of the data buffer.
+   * Size of the data buffer @e data.
    */
   size_t data_buffer_size;
 
@@ -325,6 +318,11 @@ struct MHD_Response
    * File-descriptor if this response is FD-backed.
    */
   int fd;
+
+  /**
+   * Flags set for the MHD response.
+   */
+  enum MHD_ResponseFlags flags;
 
 };
 
@@ -489,8 +487,10 @@ MHD_state_to_string (enum MHD_CONNECTION_STATE state);
  * @param max_bytes maximum number of bytes to receive
  * @return number of bytes written to write_to
  */
-typedef ssize_t (*ReceiveCallback) (struct MHD_Connection * conn,
-                                    void *write_to, size_t max_bytes);
+typedef ssize_t
+(*ReceiveCallback) (struct MHD_Connection *conn,
+                    void *write_to,
+                    size_t max_bytes);
 
 
 /**
@@ -501,8 +501,10 @@ typedef ssize_t (*ReceiveCallback) (struct MHD_Connection * conn,
  * @param max_bytes maximum number of bytes to transmit
  * @return number of bytes transmitted
  */
-typedef ssize_t (*TransmitCallback) (struct MHD_Connection * conn,
-                                     const void *write_to, size_t max_bytes);
+typedef ssize_t
+(*TransmitCallback) (struct MHD_Connection *conn,
+                     const void *write_to,
+                     size_t max_bytes);
 
 
 /**
@@ -535,6 +537,10 @@ struct MHD_Connection
 
   /**
    * Next pointer for the XDLL organizing connections by timeout.
+   * This DLL can be either the
+   * 'manual_timeout_head/manual_timeout_tail' or the
+   * 'normal_timeout_head/normal_timeout_tail', depending on whether a
+   * custom timeout is set for the connection.
    */
   struct MHD_Connection *nextX;
 
@@ -576,12 +582,21 @@ struct MHD_Connection
   struct MemoryPool *pool;
 
   /**
-   * We allow the main application to associate some
-   * pointer with the connection.  Here is where we
-   * store it.  (MHD does not know or care what it
-   * is).
+   * We allow the main application to associate some pointer with the
+   * HTTP request, which is passed to each #MHD_AccessHandlerCallback
+   * and some other API calls.  Here is where we store it.  (MHD does
+   * not know or care what it is).
    */
   void *client_context;
+
+  /**
+   * We allow the main application to associate some pointer with the
+   * TCP connection (which may span multiple HTTP requests).  Here is
+   * where we store it.  (MHD does not know or care what it is).
+   * The location is given to the #MHD_NotifyConnectionCallback and
+   * also accessible via #MHD_CONNECTION_INFO_SOCKET_CONTEXT.
+   */
+  void *socket_context;
 
   /**
    * Request method.  Should be GET/POST/etc.  Allocated
@@ -604,7 +619,7 @@ struct MHD_Connection
   /**
    * Buffer for reading requests.   Allocated
    * in pool.  Actually one byte larger than
-   * read_buffer_size (if non-NULL) to allow for
+   * @e read_buffer_size (if non-NULL) to allow for
    * 0-termination.
    */
   char *read_buffer;
@@ -618,7 +633,8 @@ struct MHD_Connection
   /**
    * Last incomplete header line during parsing of headers.
    * Allocated in pool.  Only valid if state is
-   * either HEADER_PART_RECEIVED or FOOTER_PART_RECEIVED.
+   * either #MHD_CONNECTION_HEADER_PART_RECEIVED or
+   * #MHD_CONNECTION_FOOTER_PART_RECEIVED.
    */
   char *last;
 
@@ -626,21 +642,22 @@ struct MHD_Connection
    * Position after the colon on the last incomplete header
    * line during parsing of headers.
    * Allocated in pool.  Only valid if state is
-   * either HEADER_PART_RECEIVED or FOOTER_PART_RECEIVED.
+   * either #MHD_CONNECTION_HEADER_PART_RECEIVED or
+   * #MHD_CONNECTION_FOOTER_PART_RECEIVED.
    */
   char *colon;
 
   /**
-   * Foreign address (of length addr_len).  MALLOCED (not
+   * Foreign address (of length @e addr_len).  MALLOCED (not
    * in pool!).
    */
   struct sockaddr *addr;
 
   /**
-   * Thread for this connection (if we are using
+   * Thread handle for this connection (if we are using
    * one thread per connection).
    */
-  pthread_t pid;
+  MHD_thread_handle_ pid;
 
   /**
    * Size of read_buffer (in bytes).  This value indicates
@@ -674,7 +691,7 @@ struct MHD_Connection
 
   /**
    * How many more bytes of the body do we expect
-   * to read? MHD_SIZE_UNKNOWN for unknown.
+   * to read? #MHD_SIZE_UNKNOWN for unknown.
    */
   uint64_t remaining_upload_size;
 
@@ -716,7 +733,7 @@ struct MHD_Connection
   int client_aware;
 
   /**
-   * Socket for this connection.  Set to MHD_INVALID_SOCKET if
+   * Socket for this connection.  Set to #MHD_INVALID_SOCKET if
    * this connection has died (daemon should clean
    * up in that case).
    */
@@ -731,7 +748,7 @@ struct MHD_Connection
   int read_closed;
 
   /**
-   * Set to MHD_YES if the thread has been joined.
+   * Set to #MHD_YES if the thread has been joined.
    */
   int thread_joined;
 
@@ -798,17 +815,17 @@ struct MHD_Connection
   /**
    * Handler used for processing read connection operations
    */
-  int (*read_handler) (struct MHD_Connection * connection);
+  int (*read_handler) (struct MHD_Connection *connection);
 
   /**
    * Handler used for processing write connection operations
    */
-  int (*write_handler) (struct MHD_Connection * connection);
+  int (*write_handler) (struct MHD_Connection *connection);
 
   /**
    * Handler used for processing idle connection operations
    */
-  int (*idle_handler) (struct MHD_Connection * connection);
+  int (*idle_handler) (struct MHD_Connection *connection);
 
   /**
    * Function used for reading HTTP request stream.
@@ -862,22 +879,24 @@ struct MHD_Connection
  * @param con connection handle
  * @return new closure
  */
-typedef void * (*LogCallback)(void * cls,
-			      const char * uri,
-			      struct MHD_Connection *con);
+typedef void *
+(*LogCallback)(void * cls,
+               const char * uri,
+               struct MHD_Connection *con);
 
 /**
  * Signature of function called to unescape URIs.  See also
- * MHD_http_unescape.
+ * #MHD_http_unescape().
  *
  * @param cls closure
  * @param conn connection handle
  * @param uri 0-terminated string to unescape (should be updated)
  * @return length of the resulting string
  */
-typedef size_t (*UnescapeCallback)(void *cls,
-				   struct MHD_Connection *conn,
-				   char *uri);
+typedef size_t
+(*UnescapeCallback)(void *cls,
+                    struct MHD_Connection *conn,
+                    char *uri);
 
 
 /**
@@ -998,6 +1017,17 @@ struct MHD_Daemon
   void *notify_completed_cls;
 
   /**
+   * Function to call when we are starting/stopping
+   * a connection.  May be NULL.
+   */
+  MHD_NotifyConnectionCallback notify_connection;
+
+  /**
+   * Closure argument to notify_connection.
+   */
+  void *notify_connection_cls;
+
+  /**
    * Function to call with the full URI at the
    * beginning of request processing.  May be NULL.
    * <p>
@@ -1007,7 +1037,7 @@ struct MHD_Daemon
   LogCallback uri_log_callback;
 
   /**
-   * Closure argument to uri_log_callback.
+   * Closure argument to @e uri_log_callback.
    */
   void *uri_log_callback_cls;
 
@@ -1017,7 +1047,7 @@ struct MHD_Daemon
   UnescapeCallback unescape_callback;
 
   /**
-   * Closure for unescape callback.
+   * Closure for @e unescape_callback.
    */
   void *unescape_callback_cls;
 
@@ -1070,24 +1100,33 @@ struct MHD_Daemon
   unsigned int worker_pool_size;
 
   /**
-   * PID of the select thread (if we have internal select)
+   * The select thread handle (if we have internal select)
    */
-  pthread_t pid;
+  MHD_thread_handle_ pid;
 
   /**
    * Mutex for per-IP connection counts.
    */
-  pthread_mutex_t per_ip_connection_mutex;
+  MHD_mutex_ per_ip_connection_mutex;
 
   /**
    * Mutex for (modifying) access to the "cleanup" connection DLL.
    */
-  pthread_mutex_t cleanup_connection_mutex;
+  MHD_mutex_ cleanup_connection_mutex;
 
   /**
    * Listen socket.
    */
   MHD_socket socket_fd;
+
+  /**
+   * Whether to allow/disallow/ignore reuse of listening address.
+   * The semantics is the following:
+   * 0: ignore (user did not ask for neither allow/disallow, use SO_REUSEADDR)
+   * >0: allow (use SO_REUSEPORT on most platforms, SO_REUSEADDR on Windows)
+   * <0: disallow (mostly no action, SO_EXCLUSIVEADDRUSE on Windows)
+   */
+  int listening_address_reuse;
 
 #if EPOLL_SUPPORT
   /**
@@ -1122,9 +1161,14 @@ struct MHD_Daemon
   int resuming;
 
   /**
+   * Number of active parallel connections.
+   */
+  unsigned int connections;
+
+  /**
    * Limit on the number of parallel connections.
    */
-  unsigned int max_connections;
+  unsigned int connection_limit;
 
   /**
    * After how many seconds of inactivity should
@@ -1139,9 +1183,9 @@ struct MHD_Daemon
   unsigned int per_ip_connection_limit;
 
   /**
-   * Daemon's options.
+   * Daemon's flags (bitfield).
    */
-  enum MHD_OPTION options;
+  enum MHD_FLAG options;
 
   /**
    * Listen port.
@@ -1189,9 +1233,24 @@ struct MHD_Daemon
   const char *https_mem_cert;
 
   /**
+   * Pointer to 0-terminated HTTPS passphrase in memory.
+   */
+  const char *https_key_password;
+
+  /**
    * Pointer to our SSL/TLS certificate authority (in ASCII) in memory.
    */
   const char *https_mem_trust;
+
+  /**
+   * Our Diffie-Hellman parameters in memory.
+   */
+  gnutls_dh_params_t https_mem_dhparams;
+
+  /**
+   * #MHD_YES if we have initialized @e https_mem_dhparams.
+   */
+  int have_dhparams;
 
   /**
    * For how many connections do we have 'tls_read_ready' set to MHD_YES?
@@ -1218,7 +1277,7 @@ struct MHD_Daemon
   /**
    * A rw-lock for synchronizing access to `nnc'.
    */
-  pthread_mutex_t nnc_lock;
+  MHD_mutex_ nnc_lock;
 
   /**
    * Size of `digest_auth_random.
@@ -1242,7 +1301,7 @@ struct MHD_Daemon
 
 
 #if EXTRA_CHECKS
-#define EXTRA_CHECK(a) if (!(a)) abort();
+#define EXTRA_CHECK(a) do { if (!(a)) abort(); } while (0)
 #else
 #define EXTRA_CHECK(a)
 #endif
@@ -1257,6 +1316,8 @@ struct MHD_Daemon
  * @param element element to insert
  */
 #define DLL_insert(head,tail,element) do { \
+  EXTRA_CHECK (NULL == (element)->next); \
+  EXTRA_CHECK (NULL == (element)->prev); \
   (element)->next = (head); \
   (element)->prev = NULL; \
   if ((tail) == NULL) \
@@ -1276,6 +1337,8 @@ struct MHD_Daemon
  * @param element element to remove
  */
 #define DLL_remove(head,tail,element) do { \
+  EXTRA_CHECK ( (NULL != (element)->next) || ((element) == (tail)));  \
+  EXTRA_CHECK ( (NULL != (element)->prev) || ((element) == (head)));  \
   if ((element)->prev == NULL) \
     (head) = (element)->next;  \
   else \
@@ -1298,9 +1361,11 @@ struct MHD_Daemon
  * @param element element to insert
  */
 #define XDLL_insert(head,tail,element) do { \
+  EXTRA_CHECK (NULL == (element)->nextX); \
+  EXTRA_CHECK (NULL == (element)->prevX); \
   (element)->nextX = (head); \
   (element)->prevX = NULL; \
-  if ((tail) == NULL) \
+  if (NULL == (tail)) \
     (tail) = element; \
   else \
     (head)->prevX = element; \
@@ -1317,11 +1382,13 @@ struct MHD_Daemon
  * @param element element to remove
  */
 #define XDLL_remove(head,tail,element) do { \
-  if ((element)->prevX == NULL) \
+  EXTRA_CHECK ( (NULL != (element)->nextX) || ((element) == (tail)));  \
+  EXTRA_CHECK ( (NULL != (element)->prevX) || ((element) == (head)));  \
+  if (NULL == (element)->prevX) \
     (head) = (element)->nextX;  \
   else \
     (element)->prevX->nextX = (element)->nextX; \
-  if ((element)->nextX == NULL) \
+  if (NULL == (element)->nextX) \
     (tail) = (element)->prevX;  \
   else \
     (element)->nextX->prevX = (element)->prevX; \
@@ -1370,12 +1437,23 @@ struct MHD_Daemon
 
 
 /**
- * Equivalent to time(NULL) but tries to use some sort of monotonic
+ * Equivalent to `time(NULL)` but tries to use some sort of monotonic
  * clock that isn't affected by someone setting the system real time
  * clock.
  *
  * @return 'current' time
  */
-time_t MHD_monotonic_time(void);
+time_t
+MHD_monotonic_time(void);
+
+
+/**
+ * Convert all occurences of '+' to ' '.
+ *
+ * @param arg string that is modified (in place), must be 0-terminated
+ */
+void
+MHD_unescape_plus (char *arg);
+
 
 #endif

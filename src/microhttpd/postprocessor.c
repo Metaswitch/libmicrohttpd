@@ -1,6 +1,6 @@
 /*
      This file is part of libmicrohttpd
-     (C) 2007-2013 Daniel Pittman and Christian Grothoff
+     Copyright (C) 2007-2013 Daniel Pittman and Christian Grothoff
 
      This library is free software; you can redistribute it and/or
      modify it under the terms of the GNU Lesser General Public
@@ -286,11 +286,10 @@ MHD_create_post_processor (struct MHD_Connection *connection,
   if (encoding == NULL)
     return NULL;
   boundary = NULL;
-  if (0 != strncasecmp (MHD_HTTP_POST_ENCODING_FORM_URLENCODED, encoding,
+  if (!MHD_str_equal_caseless_n_ (MHD_HTTP_POST_ENCODING_FORM_URLENCODED, encoding,
                         strlen (MHD_HTTP_POST_ENCODING_FORM_URLENCODED)))
     {
-      if (0 !=
-          strncasecmp (MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, encoding,
+      if (!MHD_str_equal_caseless_n_ (MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, encoding,
                        strlen (MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA)))
         return NULL;
       boundary =
@@ -381,7 +380,8 @@ post_process_urlencoded (struct MHD_PostProcessor *pp,
             return MHD_YES;     /* no '=' yet */
           buf[pp->buffer_pos] = '\0';   /* 0-terminate key */
           pp->buffer_pos = 0;   /* reset for next key */
-          MHD_http_unescape (NULL, NULL, buf);
+	  MHD_unescape_plus (buf);
+          MHD_http_unescape (buf);
           poff += equals + 1;
           pp->state = PP_ProcessValue;
           pp->value_offset = 0;
@@ -441,7 +441,8 @@ post_process_urlencoded (struct MHD_PostProcessor *pp,
 
           /* unescape */
           xbuf[xoff] = '\0';    /* 0-terminate in preparation */
-          xoff = MHD_http_unescape (NULL, NULL, xbuf);
+	  MHD_unescape_plus (xbuf);
+          xoff = MHD_http_unescape (xbuf);
           /* finally: call application! */
 	  pp->must_ikvi = MHD_NO;
           if (MHD_NO == pp->ikvi (pp->cls, MHD_POSTDATA_KIND, (const char *) &pp[1],    /* key */
@@ -501,7 +502,7 @@ try_match_header (const char *prefix, char *line, char **suffix)
     return MHD_NO;
   while (*line != 0)
     {
-      if (0 == strncasecmp (prefix, line, strlen (prefix)))
+      if (MHD_str_equal_caseless_n_ (prefix, line, strlen (prefix)))
         {
           *suffix = strdup (&line[strlen (prefix)]);
           return MHD_YES;
@@ -661,7 +662,7 @@ process_multipart_headers (struct MHD_PostProcessor *pp,
   if (buf[newline] == '\r')
     pp->skip_rn = RN_OptN;
   buf[newline] = '\0';
-  if (0 == strncasecmp ("Content-disposition: ",
+  if (MHD_str_equal_caseless_n_ ("Content-disposition: ",
                         buf, strlen ("Content-disposition: ")))
     {
       try_get_value (&buf[strlen ("Content-disposition: ")],
@@ -967,7 +968,7 @@ post_process_multipart (struct MHD_PostProcessor *pp,
           break;
         case PP_PerformCheckMultipart:
           if ((pp->content_type != NULL) &&
-              (0 == strncasecmp (pp->content_type,
+              (MHD_str_equal_caseless_n_ (pp->content_type,
                                  "multipart/mixed",
                                  strlen ("multipart/mixed"))))
             {
@@ -1135,11 +1136,10 @@ MHD_post_process (struct MHD_PostProcessor *pp,
     return MHD_YES;
   if (NULL == pp)
     return MHD_NO;
-  if (0 == strncasecmp (MHD_HTTP_POST_ENCODING_FORM_URLENCODED, pp->encoding,
+  if (MHD_str_equal_caseless_n_ (MHD_HTTP_POST_ENCODING_FORM_URLENCODED, pp->encoding,
                          strlen(MHD_HTTP_POST_ENCODING_FORM_URLENCODED)))
     return post_process_urlencoded (pp, post_data, post_data_len);
-  if (0 ==
-      strncasecmp (MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, pp->encoding,
+  if (MHD_str_equal_caseless_n_ (MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA, pp->encoding,
                    strlen (MHD_HTTP_POST_ENCODING_MULTIPART_FORMDATA)))
     return post_process_multipart (pp, post_data, post_data_len);
   /* this should never be reached */
